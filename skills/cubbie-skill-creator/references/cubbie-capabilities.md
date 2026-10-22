@@ -45,6 +45,12 @@ sends a message to someone else, submits work or changes an account.
   approval. For payment, hand the browser to the student.
 - **Keep personal data with the student.** Let Cubbie remember preferences. Send data to your own server only when
   the Skill says so plainly and the host is declared in `cubbie.yaml`.
+- **Installs are per student.** A student who installs a Skill gets it only for themselves; keys, logins and saved
+  state stay with that student.
+
+Worked examples of the three usual shapes (instructions only, a script with a package and a key, a CLI with a
+sign-in): https://github.com/imaginix-inc/cubbie-hackathon-kit/tree/main/examples. Each installs on Cubbie as it
+is, so texting one to Cubbie is the quickest way to see what students will see.
 
 ## Built-in Skills
 

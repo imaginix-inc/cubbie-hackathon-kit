@@ -1,6 +1,6 @@
 ---
 name: cubbie-hackathon
-description: Guide a team through the Cubbie Hackathon (hackathon.cubbie.ai), from the rules and live deadlines to building a Track 1 Cubbie Skill, planning Track 2 or 3, and submitting or editing the team's entry from the terminal. Use when someone mentions the Cubbie hackathon, its tracks, deadlines, judging, prizes or gallery, or wants to submit or update their hackathon project.
+description: Guide a team through the Cubbie Hackathon (hackathon.cubbie.ai), from the rules and live deadlines to finding an idea, building and testing a Track 1 Cubbie Skill, planning Track 2 or 3, and submitting or editing the team's entry from the terminal. Use when someone mentions the Cubbie hackathon, its tracks, deadlines, judging, prizes or gallery, wants a Skill idea for Cubbie, or wants to submit or update their hackathon project.
 ---
 
 # Cubbie Hackathon
@@ -11,7 +11,8 @@ without the website. Site: https://hackathon.cubbie.ai. Questions for the organi
 
 ## Rules for you
 
-- **Facts** come only from `references/rules.md` and, for anything about time, from the live `status` command.
+- **Facts** come only from `references/rules.md`, `references/ideas.md`, `../cubbie-skill-creator/references/` and,
+  for anything about time, from the live `status` command.
   Never state a date, deadline, prize, score weight or judging criterion that isn't there. Where the event says
   something is still being finalized (Track 1's exact cutoff, Tracks 2 and 3 criteria), say so.
 - **Time**: run `status` before you say what is open, closed or due. It prints each window in the user's local
@@ -33,37 +34,66 @@ without the website. Site: https://hackathon.cubbie.ai. Questions for the organi
   library only). Add `--json` when you want to parse the output. Database errors are written for students: relay
   them as they are.
 
-## 1. Get oriented
+## 1. Start here: where is the team?
 
-1. `python3 scripts/hackathon.py status` and summarize what is open.
-2. Ask who is on the team (1 to 4 people, name and email each), which tracks they want, and what they have so
-   far. If they already signed in, `mine` shows the team's entries.
-3. Explain the shape in a few lines: Track 1 (a Cubbie Skill) is for every team and unlocks Tracks 2 and 3;
-   Track 1's judges look mainly at public votes on the site and the demo video's social engagement; Tracks 2
-   and 3 are judged privately. Details and prizes
-   are in `references/rules.md`; read it before answering rule questions.
+Most participants won't read a guide; you are the guide. On first use:
+
+1. Run `python3 scripts/hackathon.py status`.
+2. Reply in a few short lines: what the hackathon is (teach Cubbie, the AI in students' iMessage, a new trick),
+   the three tracks in one line each, what is open right now from `status`, and that you can take them from idea
+   to submission, including submitting for them.
+3. Ask where the team is, and offer these as choices:
+   - Looking for an idea → section 2, step 1
+   - Have an idea, not built yet → section 2, step 1 (sharpen and check it), then step 3
+   - Built, testing on Cubbie → section 2, step 4
+   - Ready to submit or update → section 4
+   - Track 2 or 3 → section 3
+   - Just a question (rules, prizes, deadlines) → `references/rules.md`
+4. Ask for the team (1 to 4 people, a name and email each) when it's needed, at the latest before submitting. If
+   they've signed in, `mine` shows what the team already has.
+
+Keep a short Track 1 checklist in the conversation and show it when a step finishes, so the team always sees what
+is left:
+
+```text
+Track 1  [x] idea  [x] Skill written  [ ] passes checks  [ ] works on our Cubbie  [ ] demo posted  [ ] submitted
+```
+
+Go one step at a time, skip what's done, and keep each message short. Explain a rule when it matters for their
+next step, not up front.
 
 ## 2. Track 1: a Cubbie Skill
 
-Walk the team through these steps, one at a time, and skip what they've already done.
+Track 1's judges look mainly at public votes on the site and the demo video's social engagement; Tracks 2 and 3
+are judged privately. Track 1 also unlocks Tracks 2 and 3.
 
-1. **Pick the moment.** A specific moment of student life (studying, friends, money, jobs and internships,
-   networking, daily life, or their own idea) where Cubbie could notice, start or take care of something. Push for
-   one concrete situation a student would text about.
-2. **Build it with `cubbie-skill-creator`** (in this kit; in Codex, `$cubbie-skill-creator`). Hand over: the
-   moment, that it's a Track 1 entry for the Cubbie Hackathon, and that it has to end in a public GitHub repo.
-   It interviews them, writes the Skill, checks it against Cubbie's install rules, helps publish it, and prints two
-   links (a branch link and a link pinned to the commit) plus a checklist for testing on their own Cubbie. If that
-   skill isn't installed, point them to the kit's README.
-3. **Test on Cubbie.** They text the branch link to Cubbie and go through the checklist. After each fix: push, text
-   the branch link again (that installs the newest push), repeat.
-4. **Demo video.** A short video showing the student moment and Cubbie handling it, posted publicly on TikTok or
-   Instagram (the only platforms the form accepts). Help with a script or shot list if they want: the problem in
-   a sentence, the real iMessage exchange, the result.
-5. **Submit** (section 4): the pinned link, platform, post link, team, one-liner. The pinned link always installs
-   exactly what they tested, for voters too. They can submit as soon as they have
-   a repo and a post, then keep editing while the window is open.
-6. **Reach.** Votes need a school email and happen on the site; social views, likes, comments and shares are read
+1. **Find the moment.** Read `references/ideas.md` and start from one moment of a student's week. With no idea
+   yet, show three or four of its notification prompts and ask which one they lived this week; with an idea,
+   sharpen it into one situation a student would text about. Then run its "Is it doable on Cubbie?" check, using
+   `../cubbie-skill-creator/references/cubbie-capabilities.md` (what Cubbie can do) and `cubbie-auth.md` next to
+   it (how sign-in works); `ideas.md` links the same files on GitHub in case that folder isn't there. Reshape the
+   idea before anything is built if a check fails.
+2. **See a Skill work first** (five minutes, recommended for first-timers): have them text Cubbie the link of one
+   of the kit's examples, such as
+   https://github.com/imaginix-inc/cubbie-hackathon-kit/tree/main/examples/canvas-deadline-nudge, reply "yes" and
+   try it. The examples' README explains the three shapes (instructions only, a script with a key, a CLI with a
+   sign-in). Cubbie itself: https://cubbie.ai. If the team can't get Cubbie running, they ask the organizers on
+   Discord; don't guess how access works.
+3. **Build it with `cubbie-skill-creator`** (in this kit; in Codex, `$cubbie-skill-creator`). Hand over: the
+   moment, the abilities and sign-in you settled on, that it's a Track 1 entry for the Cubbie Hackathon, and that
+   it has to end in a public GitHub repo. It interviews them, writes the Skill, checks it against Cubbie's install
+   rules, helps publish it, and prints two links (a branch link and a link pinned to the commit) plus a checklist
+   for testing on their own Cubbie. If that skill isn't installed, point them to the kit's README.
+4. **Test on Cubbie.** They text the branch link to Cubbie and go through the checklist. After each fix: push,
+   text the branch link again (that installs the newest push), repeat. Track 1 is done when Cubbie installs the
+   Skill from its link and the main flow works on a real account.
+5. **Demo video.** A short public video showing the student moment and Cubbie handling it, posted on TikTok or
+   Instagram (the only platforms the form accepts). Offer a shot list: the moment in the first seconds, the real
+   iMessage exchange, the result. Length, hashtags or tags haven't been announced; don't make them up.
+6. **Submit** (section 4): the pinned link, platform, post link, team, one-liner. The pinned link always installs
+   exactly what they tested, for voters too. They can submit as soon as they have a repo and a post, then keep
+   editing while the window is open.
+7. **Reach.** Votes need a school email and happen on the site; social views, likes, comments and shares are read
    automatically. More posts with the demo (up to 5 besides the main one) can be added with `posts` until voting
    closes.
 

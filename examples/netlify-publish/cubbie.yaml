@@ -1,0 +1,12 @@
+cubbie: 1
+
+dependencies:
+  npm: ["netlify-cli@27.12.1"]
+
+network:
+  runtime: ["api.netlify.com"]
+
+login:
+  - id: netlify
+    command: netlify login --request "Cubbie wants to publish web pages for you" --json
+    status: python3 scripts/publish.py status

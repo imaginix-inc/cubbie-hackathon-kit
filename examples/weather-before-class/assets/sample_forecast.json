@@ -1,0 +1,13 @@
+{
+  "cod": "200",
+  "cnt": 6,
+  "list": [
+    {"dt": 1792508400, "main": {"temp": 17.2, "feels_like": 16.8}, "weather": [{"main": "Clouds", "description": "overcast clouds"}], "pop": 0.1},
+    {"dt": 1792519200, "main": {"temp": 18.4, "feels_like": 18.1}, "weather": [{"main": "Rain", "description": "light rain"}], "pop": 0.72, "rain": {"3h": 0.9}},
+    {"dt": 1792530000, "main": {"temp": 16.1, "feels_like": 15.6}, "weather": [{"main": "Rain", "description": "moderate rain"}], "pop": 0.86, "rain": {"3h": 2.4}},
+    {"dt": 1792540800, "main": {"temp": 14.0, "feels_like": 13.2}, "weather": [{"main": "Clouds", "description": "broken clouds"}], "pop": 0.3},
+    {"dt": 1792551600, "main": {"temp": 12.5, "feels_like": 11.4}, "weather": [{"main": "Clear", "description": "clear sky"}], "pop": 0},
+    {"dt": 1792562400, "main": {"temp": 11.8, "feels_like": 10.9}, "weather": [{"main": "Clear", "description": "clear sky"}], "pop": 0}
+  ],
+  "city": {"name": "Austin", "country": "US", "timezone": -18000}
+}

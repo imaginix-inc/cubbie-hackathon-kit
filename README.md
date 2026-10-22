@@ -9,7 +9,14 @@ teach it a new trick.
 | [`cubbie-hackathon`](skills/cubbie-hackathon) | Explains the three tracks, what each needs and how it is judged; reads the open and close times live from the hackathon site; walks your team through Track 1 and then Tracks 2 and 3; signs you in with Google or an email code and submits or edits your team's entry, so you don't need the website for that. |
 | [`cubbie-skill-creator`](skills/cubbie-skill-creator) | Writes your Track 1 Cubbie Skill with you: interview, draft, checks against Cubbie's install rules, publishing to GitHub, and the link you text to Cubbie to install it. Based on Anthropic's skill-creator. |
 
-Both are standard [Agent Skills](https://agentskills.io).
+Both are standard [Agent Skills](https://agentskills.io). [`examples/`](examples) has three small Cubbie Skills
+you can text to Cubbie to see one install and run before you write your own.
+
+New to Agent Skills? The [overview](https://agentskills.io), the
+[quickstart](https://agentskills.io/skill-creation/quickstart), the
+[specification](https://agentskills.io/specification) and the
+[authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices).
+You don't need them to take part: the skills carry what your agent needs to know about Cubbie.
 
 ## Install
 
@@ -46,9 +53,13 @@ mkdir -p ~/.agents/skills && cp -R cubbie-hackathon-kit/skills/* ~/.agents/skill
 
 Start a new session after installing, then ask something like:
 
-> What's open in the Cubbie hackathon right now, and what does our team need for Track 1?
+> Let's do the Cubbie hackathon. Where do we start?
+
+> We need an idea for a Cubbie Skill.
 
 > Help us build our Track 1 Skill, then submit it.
+
+The `cubbie-hackathon` skill asks where your team is and takes it from there, step by step.
 
 To update a copied install, `git pull` in the clone and copy the folders again.
 

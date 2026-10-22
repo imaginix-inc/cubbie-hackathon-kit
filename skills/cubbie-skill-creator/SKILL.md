@@ -64,7 +64,7 @@ Check available MCPs - if useful for research (searching docs, finding similar s
 
 ### When the target is Cubbie
 
-A Cubbie skill teaches Cubbie one student situation and leans on abilities Cubbie already has. Read `references/cubbie-capabilities.md` before the interview, then add these questions (skip any the conversation already answered):
+A Cubbie skill teaches Cubbie one student situation and leans on abilities Cubbie already has. Worked examples: https://github.com/imaginix-inc/cubbie-hackathon-kit/tree/main/examples. Read `references/cubbie-capabilities.md` before the interview, then add these questions (skip any the conversation already answered):
 
 1. **The student moment.** When in a student's week does this matter, and what would they text? These become the description's triggers.
 2. **Cubbie abilities.** Which of Cubbie's abilities does it need: Canvas, reminders and check-ins (including phone calls), background tasks, web, browser, Google, email events, documents, files, memory? The skill names each one in plain words, never as tool names or parameters.
