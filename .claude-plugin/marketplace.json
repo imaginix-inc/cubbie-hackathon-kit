@@ -1,0 +1,17 @@
+{
+  "name": "cubbie-hackathon-kit",
+  "description": "Skills for the Cubbie Hackathon: the rules, live deadlines, building a Cubbie Skill, and submitting from your agent.",
+  "owner": {
+    "name": "Cubbie",
+    "url": "https://cubbie.ai"
+  },
+  "plugins": [
+    {
+      "name": "cubbie-hackathon",
+      "source": "./",
+      "description": "Guides your team through the Cubbie Hackathon and submits your entry; includes the Cubbie Skill Creator.",
+      "homepage": "https://hackathon.cubbie.ai",
+      "license": "Apache-2.0"
+    }
+  ]
+}
