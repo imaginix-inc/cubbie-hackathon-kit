@@ -89,8 +89,11 @@ Discord, and one student is drawn to win a PS5.
 
 ## Submitting and editing (enforced by the site's database)
 
-- Sign in with an email address (a 6-digit code by email) or Google on the site. The same email address is the
-  same account either way. Use your school email: anyone can submit, but only school emails can vote.
+- Sign in with Google or with a 6-digit code by email, on the site or with this kit. One email address is one
+  account either way (checked on 2026-10-23: Google on the site, Google in the kit and an email code all reached the
+  same account). A different address is a different account, even for the same person: a school alias, a personal
+  Gmail, Gmail with or without dots, a `+tag`. Google uses the Google account's primary address. Use your school
+  email: anyone can submit, but only school emails can vote.
 - One entry per person per track. Whoever sends it owns it; the members listed on it see it but can't start a
   second entry for that track, and only the owner can edit it.
 - No review gate: an entry is live in the public gallery the moment it is sent (Track 1 can be voted on at once).

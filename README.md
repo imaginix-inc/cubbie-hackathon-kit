@@ -6,7 +6,7 @@ teach it a new trick.
 
 | Skill | What it does |
 | --- | --- |
-| [`cubbie-hackathon`](skills/cubbie-hackathon) | Explains the three tracks, what each needs and how it is judged; reads the open and close times live from the hackathon site; walks your team through Track 1 and then Tracks 2 and 3; signs you in with an email code and submits or edits your team's entry, so you don't need the website for that. |
+| [`cubbie-hackathon`](skills/cubbie-hackathon) | Explains the three tracks, what each needs and how it is judged; reads the open and close times live from the hackathon site; walks your team through Track 1 and then Tracks 2 and 3; signs you in with Google or an email code and submits or edits your team's entry, so you don't need the website for that. |
 | [`cubbie-skill-creator`](skills/cubbie-skill-creator) | Writes your Track 1 Cubbie Skill with you: interview, draft, checks against Cubbie's install rules, publishing to GitHub, and the link you text to Cubbie to install it. Based on Anthropic's skill-creator. |
 
 Both are standard [Agent Skills](https://agentskills.io).
@@ -65,7 +65,8 @@ The agent runs this for you, but it works on its own too:
 ```bash
 cd skills/cubbie-hackathon
 python3 scripts/hackathon.py status                              # what's open right now
-python3 scripts/hackathon.py login --email you@school.edu        # emails you a 6-digit code
+python3 scripts/hackathon.py login --google                      # Google in your browser
+python3 scripts/hackathon.py login --email you@school.edu        # or: emails you a 6-digit code
 python3 scripts/hackathon.py mine                                # your team's entries
 python3 scripts/hackathon.py submit --track skills --help        # every field
 python3 scripts/hackathon.py gallery --track skills
@@ -76,8 +77,12 @@ python3 scripts/hackathon.py logout
 the moment it's sent (team name, project name, one-liner and links; member emails stay private), and your team
 can keep editing it while the track is open.
 
+Sign in with the same email address you use on the website: Google or an email code for one address reach the
+same account, but another address (an alias, a personal Gmail) is a different account and can't edit your team's
+entry. `whoami` shows which address and account you're on.
+
 What the script keeps on your computer: only the sign-in's access token, which expires after about an hour, in
-`~/.config/cubbie-hackathon/session.json` (readable only by you). `logout` deletes it. The key inside the script is
+`~/.config/cubbie-hackathon/session.json` (readable only by you). `logout` deletes it and ends only that sign-in. The key inside the script is
 the website's public key; all rules are enforced by the hackathon's database.
 
 ## Questions

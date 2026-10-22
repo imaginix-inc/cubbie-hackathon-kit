@@ -2,7 +2,8 @@
 """The Cubbie Hackathon from the command line: live windows, sign-in, your team's entries, submitting.
 
     python3 scripts/hackathon.py status                          # what is open right now (live)
-    python3 scripts/hackathon.py login --email you@school.edu    # emails you a 6-digit code
+    python3 scripts/hackathon.py login --google                  # signs in with Google in your browser
+    python3 scripts/hackathon.py login --email you@school.edu    # or: emails you a 6-digit code
     python3 scripts/hackathon.py verify --email you@school.edu --code 123456
     python3 scripts/hackathon.py whoami
     python3 scripts/hackathon.py mine                            # your team's entries
@@ -23,15 +24,21 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
+import html
 import json
 import os
 import re
+import secrets
 import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import webbrowser
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, Optional
 
@@ -101,7 +108,7 @@ def load_token(required: bool = True) -> Optional[str]:
         return token
     if required:
         why = "Your sign-in expired" if token else "You're not signed in"
-        raise Problem(f"{why}. Run: login --email <your email>, then verify with the code.")
+        raise Problem(f"{why}. Run: login --google, or login --email <your email> and verify with the code.")
     return None
 
 
@@ -147,6 +154,8 @@ def explain_error(status: int, raw: bytes) -> str:
         return message
     if error_code == "otp_expired":
         return "That code didn't work. Check it, or ask for a new one with login."
+    if error_code in ("flow_state_not_found", "flow_state_expired", "bad_code_verifier"):
+        return "The Google sign-in expired or didn't match. Run login --google again."
     if status == 429 or "rate" in error_code:
         return "Too many requests. Wait a minute (one code per email per 60 seconds) and try again."
     if status == 401 or code == "PGRST301" or "JWT" in str(message):
@@ -380,6 +389,8 @@ def cmd_status(args) -> None:
 
 
 def cmd_login(args) -> None:
+    if args.google:
+        return login_google(args)
     email = args.email.strip().lower()
     if not EMAIL.match(email):
         raise Problem(f"{args.email!r} doesn't look like an email address.")
@@ -401,13 +412,103 @@ def finish_verify(args, email: str, code: str) -> None:
         if "expired" in str(exc).lower() or "invalid" in str(exc).lower():
             raise Problem("That code didn't work. Check it, or ask for a new one with login.") from None
         raise
+    finish_session(args, session)
+
+
+def finish_session(args, session: Optional[dict]) -> None:
+    """Keep only the access token of a new Supabase session and say who is signed in."""
     token = (session or {}).get("access_token")
     if not token:
-        raise Problem("Sign-in didn't return a session; ask for a new code with login.")
+        raise Problem("Sign-in didn't return a session; run login again.")
     path = save_token(token)
     claims = jwt_claims(token)
-    out(args, {"signed_in": True, "email": claims.get("email"), "expires_at": claims.get("exp"), "saved_to": str(path)},
-        f"Signed in as {claims.get('email')}. The sign-in lasts about an hour; only its token is saved ({path}).")
+    methods = sign_in_methods(token)
+    out(args, {"signed_in": True, "email": claims.get("email"), "user_id": claims.get("sub"), "sign_in_methods": methods,
+               "expires_at": claims.get("exp"), "saved_to": str(path)},
+        f"Signed in as {claims.get('email')} (account {str(claims.get('sub'))[:8]}; signs in with {', '.join(methods) or 'unknown'}).\n"
+        f"The sign-in lasts about an hour; only its token is saved ({path}).")
+
+
+def sign_in_methods(token: str) -> list:
+    """How this account can sign in: its linked providers (Google) from Supabase's current view of the user, plus
+    an email code, which always reaches the account that owns the address."""
+    try:
+        user = request("GET", "/auth/v1/user", token=token) or {}
+    except Problem:
+        user = {}
+    providers = (user.get("app_metadata") or jwt_claims(token).get("app_metadata") or {}).get("providers") or []
+    methods = [p.capitalize() for p in providers if p != "email"]
+    return methods + ["email code"] if (user.get("email") or jwt_claims(token).get("email")) else methods
+
+
+def pkce_pair() -> tuple:
+    """A PKCE verifier and its S256 challenge (RFC 7636)."""
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    return verifier, challenge
+
+
+CALLBACK_PAGE = """<!doctype html><meta charset="utf-8"><title>Cubbie Hackathon</title>
+<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center">
+<h1>{title}</h1><p>{body}</p></body>"""
+
+
+def wait_for_callback(server: HTTPServer, deadline: float) -> dict:
+    """Serve the loopback page Supabase sends the browser back to, until it brings a code or an error."""
+    result: dict = {}
+
+    class Callback(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 (http.server's naming)
+            url = urllib.parse.urlparse(self.path)
+            if url.path != "/callback":
+                self.send_error(404)
+                return
+            result.update({k: v[0] for k, v in urllib.parse.parse_qs(url.query).items()})
+            ok = "code" in result
+            body = "You can close this tab and go back to your terminal or agent." if ok else \
+                html.escape(result.get("error_description") or result.get("error") or "No sign-in came back.")
+            page = CALLBACK_PAGE.format(title="You're signed in" if ok else "Sign-in didn't finish", body=body).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.end_headers()
+            self.wfile.write(page)
+
+        def log_message(self, *args):  # keep the terminal quiet
+            pass
+
+    server.RequestHandlerClass = Callback
+    while not result and time.time() < deadline:
+        server.timeout = max(0.1, min(1.0, deadline - time.time()))
+        server.handle_request()
+    return result
+
+
+def login_google(args) -> None:
+    """Google through Supabase with PKCE; the browser comes back to a one-off page on 127.0.0.1.
+
+    Supabase accepts loopback redirects on any port (RFC 8252), so nothing has to be registered.
+    The code is useless without the verifier, which never leaves this process.
+    """
+    verifier, challenge = pkce_pair()
+    server = HTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    try:
+        redirect = f"http://127.0.0.1:{server.server_address[1]}/callback"
+        url = f"{SUPABASE_URL}/auth/v1/authorize?" + urllib.parse.urlencode({
+            "provider": "google", "redirect_to": redirect, "code_challenge": challenge,
+            "code_challenge_method": "s256", "prompt": "select_account"})
+        print(f"Opening Google sign-in in your browser (waiting up to {args.timeout // 60} minutes).\n"
+              f"If it doesn't open, paste this link into the browser on this computer:\n{url}",
+              file=sys.stderr if args.json else sys.stdout, flush=True)
+        webbrowser.open(url)
+        got = wait_for_callback(server, time.time() + args.timeout)
+    finally:
+        server.server_close()
+    if not got:
+        raise Problem(f"No Google sign-in came back within {args.timeout // 60} minutes. Run login --google again.")
+    if "code" not in got:
+        raise Problem("Google sign-in didn't finish: " + (got.get("error_description") or got.get("error") or "unknown error"))
+    finish_session(args, request("POST", "/auth/v1/token?grant_type=pkce", {"auth_code": got["code"], "code_verifier": verifier}))
 
 
 def cmd_verify(args) -> None:
@@ -417,13 +518,15 @@ def cmd_verify(args) -> None:
 def cmd_whoami(args) -> None:
     token = load_token(required=False)
     if not token:
-        return out(args, {"signed_in": False}, "Not signed in. Run: login --email <your email>")
+        return out(args, {"signed_in": False}, "Not signed in. Run: login --google, or login --email <your email>")
     c = jwt_claims(token)
     expires = datetime.fromtimestamp(c["exp"], timezone.utc)
     school = rpc("is_school_email", {"addr": c.get("email", "")})
-    out(args, {"signed_in": True, "email": c.get("email"), "user_id": c.get("sub"), "expires_at": expires.isoformat(),
-               "can_vote": bool(school)},
-        f"Signed in as {c.get('email')} until {when(expires.isoformat())}."
+    methods = sign_in_methods(token)
+    out(args, {"signed_in": True, "email": c.get("email"), "user_id": c.get("sub"), "sign_in_methods": methods,
+               "expires_at": expires.isoformat(), "can_vote": bool(school)},
+        f"Signed in as {c.get('email')} (account {str(c.get('sub'))[:8]}) until {when(expires.isoformat())}.\n"
+        f"This account signs in with: {', '.join(methods) or 'unknown'}."
         + ("" if school else "\nVoting needs a school email; this address can submit but not vote."))
 
 
@@ -504,6 +607,10 @@ def cmd_submit(args) -> None:
     notes = []
     if claims.get("email") and claims["email"].lower() not in [m["email"].lower() for m in e["members"]]:
         notes.append(f"Note: you ({claims['email']}) aren't listed as a member.")
+    if not mine:
+        notes.append(f"Note: this starts a new entry owned by the account of {claims.get('email')}. If your team already "
+                     "sent one for this track (on the website or with another address), sign in with that account "
+                     "instead, so you update it rather than adding a second one.")
     action = "Update" if mine else "New entry"
     preview = f"{action}, goes live in the public gallery as soon as it is sent:\n{entry_text(track, e)}"
     if notes:
@@ -573,7 +680,7 @@ def cmd_logout(args) -> None:
     token = load_token(required=False)
     if token:
         try:
-            request("POST", "/auth/v1/logout", {}, token)
+            request("POST", "/auth/v1/logout?scope=local", {}, token)  # this sign-in only, not the website's
         except Problem:
             pass  # the local token goes either way
     existed = path.exists()
@@ -590,8 +697,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="which tracks and voting are open right now (live)").set_defaults(fn=cmd_status)
 
-    s = sub.add_parser("login", help="email a 6-digit sign-in code")
-    s.add_argument("--email", required=True)
+    s = sub.add_parser("login", help="sign in with Google in the browser, or get a 6-digit code by email")
+    how = s.add_mutually_exclusive_group(required=True)
+    how.add_argument("--google", action="store_true", help="sign in with Google in your browser")
+    how.add_argument("--email", help="email a 6-digit code to this address")
+    s.add_argument("--timeout", type=int, default=300, help="seconds to wait for the Google sign-in (default 300)")
     s.set_defaults(fn=cmd_login)
 
     s = sub.add_parser("verify", help="finish signing in with the emailed code")

@@ -11,8 +11,12 @@ import importlib.util
 import io
 import json
 import os
+import hashlib
 import stat
+import urllib.parse
+import urllib.request
 import tempfile
+import threading
 import time
 import unittest
 import unittest.mock
@@ -87,7 +91,11 @@ class FakeBackend:
             return {}
         if path == "/auth/v1/verify":
             return {"access_token": fake_jwt(), "refresh_token": "never-saved", "user": {"email": "ana@school.edu"}}
-        if path == "/auth/v1/logout":
+        if path == "/auth/v1/token?grant_type=pkce":
+            return {"access_token": fake_jwt(), "refresh_token": "never-saved", "user": {"email": "ana@school.edu"}}
+        if path == "/auth/v1/user":
+            return {"email": "ana@school.edu", "app_metadata": {"providers": ["google"]}}
+        if path == "/auth/v1/logout?scope=local":
             return None
         raise AssertionError(f"unexpected call {method} {path}")
 
@@ -226,6 +234,58 @@ class Session(Base):
         self.sign_in()
         self.assertEqual(self.run_cli("logout")[0], 0)
         self.assertFalse(hk.session_path().exists())
+        self.assertEqual(len(self.backend.sent("/auth/v1/logout?scope=local")), 1)  # never the global default
+
+
+class GoogleLogin(Base):
+    """login --google: browser → Supabase → Google → back to a one-off page on 127.0.0.1 → PKCE exchange."""
+
+    def browser_returns(self, **params):
+        """Stand in for the browser: read the authorize URL, then hit the loopback callback like Supabase would."""
+        self.opened = []
+
+        def open_(url):
+            self.opened.append(url)
+            query = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
+            target = query["redirect_to"] + "?" + urllib.parse.urlencode(params)
+            threading.Thread(target=lambda: urllib.request.urlopen(target, timeout=5).read(), daemon=True).start()
+            return True
+        return unittest.mock.patch.object(hk.webbrowser, "open", open_)
+
+    def test_pkce_round_trip(self):
+        with self.browser_returns(code="auth-code-123"):
+            code, out, err = self.run_cli("login", "--google", "--timeout", "10")
+        self.assertEqual(code, 0, err)
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(self.opened[0]).query))
+        self.assertEqual(query["provider"], "google")
+        self.assertEqual(query["code_challenge_method"], "s256")
+        self.assertRegex(query["redirect_to"], r"^http://127\.0\.0\.1:\d+/callback$")
+        (_, _, body, _), = self.backend.sent("/auth/v1/token?grant_type=pkce")
+        self.assertEqual(body["auth_code"], "auth-code-123")
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(body["code_verifier"].encode()).digest()).decode().rstrip("=")
+        self.assertEqual(challenge, query["code_challenge"])  # the verifier matches what the browser was given
+        self.assertEqual(set(json.loads(hk.session_path().read_text())), {"access_token"})
+        self.assertIn("signs in with Google, email code", out)
+
+    def test_error_from_supabase(self):
+        with self.browser_returns(error="access_denied", error_description="The user cancelled."):
+            code, _, err = self.run_cli("login", "--google", "--timeout", "10")
+        self.assertEqual(code, 1)
+        self.assertIn("The user cancelled.", err)
+        self.assertEqual(self.backend.sent("/auth/v1/token?grant_type=pkce"), [])
+
+    def test_gives_up_after_the_timeout(self):
+        with unittest.mock.patch.object(hk.webbrowser, "open", lambda url: True):
+            started = time.time()
+            code, _, err = self.run_cli("login", "--google", "--timeout", "1")
+        self.assertEqual(code, 1)
+        self.assertIn("No Google sign-in came back", err)
+        self.assertLess(time.time() - started, 5)
+
+    def test_whoami_lists_sign_in_methods(self):
+        self.sign_in()
+        code, out, _ = self.run_cli("--json", "whoami")
+        self.assertEqual(json.loads(out)["sign_in_methods"], ["Google", "email code"])
 
 
 class Submit(Base):
@@ -238,6 +298,7 @@ class Submit(Base):
         code, out, _ = self.run_cli(*self.ARGS)
         self.assertEqual(code, 0, out)
         self.assertIn("Nothing sent", out)
+        self.assertIn("starts a new entry owned by the account of ana@school.edu", out)
         self.assertEqual(self.backend.sent("/rest/v1/rpc/submit_entry"), [])
 
     def test_yes_sends_and_checks_the_gallery(self):

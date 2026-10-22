@@ -18,9 +18,17 @@ without the website. Site: https://hackathon.cubbie.ai. Questions for the organi
   time and UTC. A window with no close time has no deadline set yet; don't guess one.
 - **Publishing**: an entry is public the moment it is sent (team name, project name, one-liner and links; member
   emails stay private). Before `submit --yes` or `posts --yes`, show the preview to the user and get a clear yes.
-- **Sign-in**: the user gives their email, gets a 6-digit code from hello@hackathon.cubbie.ai, and either tells it
-  to you or runs `verify` themselves. Never ask for passwords. The script saves only the session's access token
-  (about an hour) and `logout` deletes it.
+- **Sign-in**: offer Google first. `login --google` opens Google in the browser on this computer and waits (up to
+  5 minutes) until the user picks their account, so give the command a long timeout or run it in the background.
+  Google's screen names `mputiuoljihmxpqhmpeb.supabase.co`, the hackathon's sign-in service; that is expected. The
+  other way is `login --email`: a 6-digit code from hello@hackathon.cubbie.ai, which the user tells you or enters
+  with `verify`. If your sandbox can't open a browser or a local port, have the user run the login in their own
+  terminal. Never ask for passwords. The script saves only the access token (about an hour); `logout` ends only
+  this sign-in, not the website's.
+- **Identity**: one email address is one account, whether the user signs in with Google or an email code, here or
+  on the website. A different address is a different account, even for the same person (a school alias, a personal
+  Gmail, Gmail with or without dots, a `+tag`), and it can't edit entries the other account sent. Before
+  submitting, run `whoami` and check the address is the one the team used on the website.
 - **Script**: run `python3 scripts/hackathon.py <command>` from this skill's folder (Python 3.9+, standard
   library only). Add `--json` when you want to parse the output. Database errors are written for students: relay
   them as they are.
@@ -81,8 +89,10 @@ gallery can show its preview card), and optionally a website and a demo video.
 ## 4. Submit or update the entry
 
 ```bash
-python3 scripts/hackathon.py login --email you@school.edu                   # emails a 6-digit code
-python3 scripts/hackathon.py verify --email you@school.edu --code 123456    # saves the session token
+python3 scripts/hackathon.py login --google                                 # Google in the browser
+python3 scripts/hackathon.py login --email you@school.edu                   # or: emails a 6-digit code
+python3 scripts/hackathon.py verify --email you@school.edu --code 123456    # finishes the email sign-in
+python3 scripts/hackathon.py whoami                                         # which address and account
 python3 scripts/hackathon.py mine                                           # the team's entries, if any
 
 # Track 1 (preview first; the same command with --yes sends it)
@@ -107,15 +117,18 @@ python3 scripts/hackathon.py logout
 - On an update, pass only what changes; everything else is kept from the saved entry. `--member` replaces the
   whole list, so repeat every member. `--file entry.json` takes the same fields as JSON (`team`, `name`, `pitch`,
   `members` as `[{"name", "email"}]`, `repo`, `platform`, `post`, `website`, `video`).
-- The flow: `status` → `login`/`verify` → `mine` → `submit` (preview) → show the user → `submit ... --yes`. After
-  sending, the script checks the public gallery and prints its link; share it with the team.
+- The flow: `status` → `login` → `whoami` → `mine` → `submit` (preview) → show the user → `submit ... --yes`.
+  When the preview says it starts a new entry but the team already has one, stop: they are signed in with another
+  address. After sending, the script checks the public gallery and prints its link; share it with the team.
 
 ## When something goes wrong
 
 | Message | What to do |
 | --- | --- |
-| Not signed in / sign-in expired | `login` again; codes last 10 minutes, one per email per 60 seconds |
+| Not signed in / sign-in expired | `login` again; email codes last 10 minutes, one per email per 60 seconds |
 | That code didn't work | Check the 6 digits or ask for a new code |
+| No Google sign-in came back / The Google sign-in expired | The browser step wasn't finished in time; run `login --google` again, or use `login --email` |
+| `mine` is empty but the team already submitted | Signed in with another address; `logout`, then sign in with the address the team used |
 | Submissions for this track are not open | Show `status`; the window is closed or not open yet |
 | Tracks 2 and 3 open once your team has submitted Track 1 | Submit Track 1 first, from any teammate's account |
 | You're already on X's entry for this track | The owner edits it; sign in as them |
