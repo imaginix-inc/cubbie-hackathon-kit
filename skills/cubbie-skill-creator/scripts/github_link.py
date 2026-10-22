@@ -8,9 +8,10 @@
     python3 scripts/github_link.py <skill-folder>            # checks GitHub too
     python3 scripts/github_link.py <skill-folder> --offline  # local git checks only
 
-The folder must be committed and pushed to a public GitHub repository. The script runs the
-Cubbie checks from validate_cubbie_skill.py, then confirms that GitHub serves the commit's
-archive without a login, which is how Cubbie downloads it. It never pushes or changes anything.
+The folder (one Skill, or a folder of Skills that one link installs together) must be committed
+and pushed to a public GitHub repository. The script runs the Cubbie checks from
+validate_cubbie_skill.py, then downloads the commit's archive the way Cubbie does (no login, no
+redirects, at most 30 MiB). It never pushes or changes anything.
 """
 
 from __future__ import annotations
@@ -46,17 +47,30 @@ def git(folder: Path, *args: str) -> str | None:
         return None
 
 
-def archive_status(owner: str, repo: str, commit: str) -> int | None:
-    """HTTP status of the commit archive Cubbie downloads; codeload needs no API quota."""
-    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{commit}"
-    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "cubbie-skill-creator"})
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return response.status
-    except urllib.error.HTTPError as exc:
-        return exc.code
-    except (urllib.error.URLError, OSError):
+MAX_ARCHIVE_BYTES = 30 * 1024 * 1024  # Cubbie refuses larger repository archives
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # Cubbie does not follow redirects either
         return None
+
+
+def archive_status(owner: str, repo: str, commit: str) -> tuple[int | None, int | None]:
+    """(HTTP status, size in bytes or None when over the limit) of the archive Cubbie downloads from codeload."""
+    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{commit}"
+    request = urllib.request.Request(url, headers={"User-Agent": "cubbie-skill-creator"})
+    try:
+        with urllib.request.build_opener(_NoRedirect).open(request, timeout=30) as response:
+            size = 0
+            while chunk := response.read(1 << 16):
+                size += len(chunk)
+                if size > MAX_ARCHIVE_BYTES:
+                    return response.status, None
+            return response.status, size
+    except urllib.error.HTTPError as exc:
+        return exc.code, 0
+    except (urllib.error.URLError, OSError):
+        return None, 0
 
 
 def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dict:
@@ -88,19 +102,32 @@ def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dic
     if not pushed:
         problems.append(f"Commit {commit[:12]} is not on any branch of the remote yet; push it first.")
 
-    # For a Skill at the repository root, Cubbie compares the name with the repository name, not the local folder.
-    checked = _load_validator().check(folder, directory_name=None if subpath else repo)
-    if not checked["ok"]:
-        hint = " (the Skill is the repository root, so the repository name counts as its folder name)" \
-            if not subpath and "must equal the folder name" in checked["error"] else ""
-        problems.append(f"Cubbie would refuse this Skill: {checked['error']}{hint}")
-    notes.extend(note for note in checked.get("warnings", []) if not note.startswith("There are uncommitted changes"))
+    validator = _load_validator()
+    at_root = not subpath and (folder / "SKILL.md").exists()
+    if (folder / "SKILL.md").exists():
+        # For a Skill at the repository root, Cubbie compares the name with the repository name, not the local folder.
+        results = [validator.check(folder, directory_name=repo if at_root else None)]
+    else:
+        results = validator.check_all(folder)  # a folder of Skills: one link installs them together
+    for checked in results:
+        if not checked["ok"]:
+            hint = " (the Skill is the repository root, so the repository name counts as its folder name)" \
+                if at_root and "must equal the folder name" in checked["error"] else ""
+            problems.append(f"Cubbie would refuse this: {checked['error']}{hint}")
+        notes.extend(note for note in checked.get("warnings", []) if not note.startswith("There are uncommitted changes"))
+    result["skills"] = [checked["name"] for checked in results if checked.get("name")]
 
     if not offline and not problems:
-        status = archive_status(owner, repo, commit)
+        status, size = archive_status(owner, repo, commit)
         if status == 404:
             problems.append(f"GitHub does not serve commit {commit[:12]} of {owner}/{repo} without a login. "
                             "Make the repository public; if it is, push the commit.")
+        elif status == 200 and size is None:
+            problems.append("The repository archive is over 30 MiB, so Cubbie would refuse it; "
+                            "put the Skill in a smaller repository.")
+        elif status is not None and 300 <= status < 400:
+            problems.append(f"GitHub redirects the archive (HTTP {status}), which Cubbie does not follow; "
+                            "check that the repository was not renamed or moved and use its current name.")
         elif status != 200:
             notes.append("Could not reach GitHub to confirm the commit is public; open the link in a private browser window to check.")
 
@@ -117,9 +144,12 @@ def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dic
 def render(result: dict) -> str:
     lines = []
     if result["ok"]:
-        lines += ["Install link (pinned to this commit; text it to Cubbie and use it for submission):", f"  {result['pinned']}"]
+        if len(result.get("skills") or []) > 1:
+            lines.append(f"One link installs {len(result['skills'])} Skills together: {', '.join(result['skills'])}")
+        lines += ["Pinned link (always this commit; share it and use it for submission once it works):", f"  {result['pinned']}"]
         if result.get("latest"):
-            lines += ["Latest on the branch (changes whenever you push):", f"  {result['latest']}"]
+            lines += ["Branch link (the newest push; test with it, and text it again after each push to update):",
+                      f"  {result['latest']}"]
     else:
         lines.append(f"Not ready: {result['folder']}")
         lines += [f"  - {problem}" for problem in result["problems"]]
@@ -129,7 +159,8 @@ def render(result: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Print the Cubbie install link for a pushed Skill folder.")
-    parser.add_argument("folder", type=Path, help="the Skill folder (its name must equal the Skill name)")
+    parser.add_argument("folder", type=Path,
+                        help="the Skill folder (its name must equal the Skill name), or a folder of Skills")
     parser.add_argument("--remote", default="origin", help="git remote that points at GitHub (default: origin)")
     parser.add_argument("--offline", action="store_true", help="skip the GitHub checks")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")

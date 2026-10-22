@@ -19,7 +19,8 @@ Ask these in order and take the first yes:
 1. Can the Skill do its job with public data, or with Cubbie's own web and browser abilities without signing in? → 1
 2. Is the data in Canvas or Google (Gmail, Calendar, Drive, Docs, Sheets, Tasks, Contacts)? → 2
 3. Is it a website the student already logs into, with no public API? → 3
-4. Does the service have a CLI whose login prints a link and exits, or that has a start step and a check step? → 4
+4. Does the service have a CLI that signs in through a browser link (one command that waits for approval, or a start
+   step and a check step)? → 4
 5. Otherwise, does the service let each student create a personal API key? → 5
 
 If none fits, the Skill probably needs a team-owned backend; see "Team keys" below before going further.
@@ -31,9 +32,10 @@ If none fits, the Skill probably needs a team-owned backend; see "Team keys" bel
 - **Keys are matched by variable name.** A student who already saved `OPENAI_API_KEY` for another Skill is not asked
   again, so use the conventional name when one exists (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`,
   `NOTION_API_KEY`, ...).
-- **The CLI login must not wait.** The login command has to print the sign-in link and exit, or the CLI must support
-  a two-step form (start, then check). A command that sits waiting for approval does not work yet. Its standard
-  input is closed, so it must not ask questions; pass answers as flags.
+- **CLI logins run in the background.** Cubbie starts the login command in the background and texts the student the
+  link (and code) as soon as it is printed; the command can keep waiting for approval, for up to an hour. A two-step
+  form (start, then check) works too. Standard input is closed, so the command must not ask questions; pass answers
+  as flags. Background runs get no saved keys, so a login must not need one.
 - **Team keys are not hosted.** Cubbie cannot keep the team's key and use it on behalf of every student. Use a
   backend that does not need a secret from the client, or ship a restricted, quota-limited key and assume anyone
   who installs the Skill can read it.
@@ -77,7 +79,8 @@ login:
     status: python3 scripts/publish.py status
 ```
 
-- `command` prints the link (and code, if any) and exits.
+- `command` prints the link (and code, if any). It may wait for approval (`gh auth login --web`) or exit and leave a
+  second step to finish it.
 - `status` exits with 0 when the student is signed in; a small wrapper script is fine.
 - For a two-step login, describe the second step (the "check" command) in `SKILL.md`.
 - Login state is written under `HOME`, which persists per student.

@@ -10,9 +10,9 @@ This skill is a modified version of skill-creator by Anthropic, PBC.
 Changes made for Cubbie (cubbie.ai), 2026-10-20:
 
 - SKILL.md: renamed the skill to cubbie-skill-creator; added Cubbie branches to the
-  interview, drafting and test steps; noted Cubbie's 320-byte description limit for
-  description optimization; replaced .skill packaging with publishing to GitHub;
-  added Codex notes. The general workflow is otherwise unchanged.
+  interview, drafting and test steps; noted Cubbie's install limits for description
+  optimization; replaced .skill packaging with publishing to GitHub; added Codex
+  notes. The general workflow is otherwise unchanged.
 - Added references/cubbie-capabilities.md, references/cubbie-auth.md,
   references/cubbie-yaml.md, references/imessage-style.md and
   references/cubbie-testing.md.
@@ -21,5 +21,10 @@ Changes made for Cubbie (cubbie.ai), 2026-10-20:
 - Removed scripts/package_skill.py and scripts/quick_validate.py, which built and
   checked .skill archives; the two scripts above replace them.
 - Added README.md and this NOTICE.
+
+Updated 2026-10-23 to Cubbie's install rules at that date (descriptions up to 1024
+characters, no SKILL.md or references size caps, UTF-8 for every Markdown file, 10 MiB
+per Skill, folders of Skills, background logins, run-time website approval, update by
+link, reserved exit codes, the 30 MiB archive limit).
 
 All other files are unchanged from the source commit.

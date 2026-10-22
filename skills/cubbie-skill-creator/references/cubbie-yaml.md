@@ -6,8 +6,8 @@ keys and logins. Other agents ignore it, so `SKILL.md` stays a standard Agent Sk
 **Only create it when needed.** A Skill that only uses Cubbie's own abilities, or scripts that use nothing but the
 Python or Node standard library and no network, needs no `cubbie.yaml`. Omit any section that is not needed.
 
-`scripts/validate_cubbie_skill.py` applies every rule below exactly as Cubbie's installer does; run it after every
-change.
+`scripts/validate_cubbie_skill.py` applies the same rules as Cubbie's installer (as of 2026-10-23); run it after
+every change.
 
 ## Contents
 
@@ -41,7 +41,7 @@ secrets:
 
 login:
   - id: example
-    command: example-cli login --no-wait
+    command: example-cli login --web       # prints a sign-in link; may wait for approval
     status: example-cli whoami
 ```
 
@@ -56,7 +56,7 @@ login:
 | `network.install` | Extra hosts needed only while installing | PyPI, npm and GitHub downloads are already allowed; at most 10 |
 | `network.runtime` | Hosts the scripts call | Host names only; at most 10; shown to the student in the install summary |
 | `secrets` | Keys the student provides | `env`, `label` (1–120 characters), optional `help_url` (`https://`), optional `required` (default `true`); at most 5; `env` names unique |
-| `login` | A CLI sign-in Cubbie starts for the student | `id` (lowercase letters, digits, `-`; at most 32), `command` (1–500 characters; prints a link and does not wait), optional `status` (at most 500 characters; exits 0 when signed in); at most 3 |
+| `login` | A CLI sign-in Cubbie starts for the student | `id` (lowercase letters, digits, `-`; at most 32), `command` (1–500 characters; prints a sign-in link, may wait for approval, never asks for input), optional `status` (at most 500 characters; exits 0 when signed in); at most 3 |
 
 ## Rules Cubbie enforces
 
@@ -80,12 +80,15 @@ login:
   `NODE_PATH`; never install anything at run time.
 - The working directory is a fresh copy of the Skill folder each time the sandbox starts; changes there are lost.
   Save state under `$SKILL_DATA_DIR`. `HOME` also persists per student, so CLI config and logins survive.
-- HTTPS to the declared hosts; everything else is blocked.
-- Each run gets 2 minutes by default (up to 10), 1 CPU and 2 GB of memory.
+- HTTPS (port 443) to the hosts in `network.runtime` and to PyPI and npm. For any other host Cubbie has to stop and
+  ask the student to allow it, so declare every host up front.
+- `curl` and `git` are installed. Each run gets 2 minutes by default (up to 10), 1 CPU and 2 GB of memory. Cubbie can
+  also run a command in the background for up to an hour (a login, a long build); background runs get no saved keys.
 - Do not assume the sandbox clock is in the student's time zone; have Cubbie pass the local date and time as
   arguments.
 - Print a short result to standard output; Cubbie reads the first 8,000 characters. Exit with a non-zero code on
-  failure and say in `SKILL.md` what each code means for the reply.
+  failure and say in `SKILL.md` what each code means for the reply. Don't use 97 or 98: Cubbie reserves them for
+  "the installed files are missing or changed" and asks the student to reinstall.
 - Declared keys arrive as environment variables; never print them.
 - Scripts cannot call Cubbie's abilities; Cubbie passes data in as arguments or files.
 
@@ -96,8 +99,8 @@ login:
 | `pip install requests` in `SKILL.md` | Remove it; declare `requests==<version>` under `dependencies.pip` |
 | `requests>=2` or `netlify-cli@^27` | Pin one exact version |
 | `https://api.example.com` in `network.runtime` | `api.example.com` |
-| A host the script calls is missing from `network.runtime` | Add it; undeclared hosts are blocked |
+| A host the script calls is missing from `network.runtime` | Add it; otherwise Cubbie has to stop and ask the student to allow it |
 | `network:` left with nothing under it | Delete the section; an empty key is an error |
 | `env: api_key` | `API_KEY` |
 | A key requested in chat | Declare it under `secrets`; Cubbie collects it on a secure page |
-| A login command that waits for approval | Use the CLI's no-wait or two-step form, or another approach from cubbie-auth.md |
+| A login command that asks a question (y/n, pick an account) | Pass the answers as flags; standard input is closed |

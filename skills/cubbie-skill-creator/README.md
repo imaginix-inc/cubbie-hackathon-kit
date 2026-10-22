@@ -32,7 +32,7 @@ reminds me what's due before my 9 pm study block." In Codex you can also type `$
 
 ```bash
 python3 scripts/validate_cubbie_skill.py path/to/my-skill   # the checks Cubbie runs when a student sends the link
-python3 scripts/github_link.py path/to/my-skill             # confirms the push and prints the pinned install link
+python3 scripts/github_link.py path/to/my-skill             # confirms the push, prints the branch and pinned links
 ```
 
 ## License

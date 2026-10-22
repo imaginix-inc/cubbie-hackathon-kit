@@ -8,10 +8,12 @@
     python3 scripts/validate_cubbie_skill.py <skill-folder>...    # needs PyYAML
     uv run scripts/validate_cubbie_skill.py <skill-folder>...     # installs PyYAML on the fly
 
-The checks mirror Cubbie's installer (SKILL.md, folder name, built-in names, file limits,
-symbolic links and every cubbie.yaml rule) and need nothing but PyYAML. Errors mean Cubbie
-will refuse the install. Warnings are local hints: Cubbie does not reject a Skill for them,
-but they usually point at something that breaks later or in other agents.
+The checks follow Cubbie's installer as of 2026-10-23 (SKILL.md, folder name, built-in names,
+file limits, Markdown encoding, symbolic links, every cubbie.yaml rule, and package versions
+across a folder of Skills) and need nothing but PyYAML. A folder without SKILL.md is checked
+the way a link to it installs: every Skill directly inside it, or inside its skills/ folder.
+Errors mean Cubbie will refuse the install. Warnings are local hints: Cubbie does not reject a
+Skill for them, but they usually point at something that breaks later or in other agents.
 Nothing is installed or run, and no website is contacted.
 """
 
@@ -40,13 +42,12 @@ BUILTIN_SKILL_NAMES = frozenset({"email-to-professor", "study-plan-builder"})
 MANIFEST = "cubbie.yaml"
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
-MAX_DESCRIPTION = 320  # UTF-8 bytes
-MAX_SKILL_BYTES = 8 * 1024
-MAX_REFERENCE_BYTES = 16 * 1024
-MAX_BODY_LINES = 500
+MAX_DESCRIPTION_CHARS = 1024  # the Agent Skills limit
+MAX_BODY_LINES = 500  # recommended by the Agent Skills spec; a warning only
 MAX_FILES = 300
-MAX_TOTAL_BYTES = 5 * 1024 * 1024
+MAX_TOTAL_BYTES = 10 * 1024 * 1024
 MAX_FILE_BYTES = 1024 * 1024
+MAX_BUNDLE_SKILLS = 40
 
 PIP_SPEC = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?==[A-Za-z0-9][A-Za-z0-9.+!_-]*$")
 NPM_SPEC = re.compile(r"^(@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*@\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$")
@@ -127,7 +128,7 @@ def read_files(folder: Path, paths: list[str]) -> dict[str, bytes]:
             raise SkillError(f"{relative}: files must be at most 1 MiB.")
         total += info.st_size
         if len(files) >= MAX_FILES or total > MAX_TOTAL_BYTES:
-            raise SkillError("A Skill can have at most 300 files and 5 MiB in total.")
+            raise SkillError("A Skill can have at most 300 files and 10 MiB in total.")
         files[relative] = (folder / path).read_bytes()
     if "SKILL.md" not in files:
         raise SkillError("No SKILL.md was found at the linked folder.")
@@ -431,21 +432,16 @@ def validate_package(files: dict[str, bytes], *, directory_name: str,
         raise SkillError(f"name {name!r} must equal the folder name {directory_name!r}.")
     if name in reserved_names:
         raise SkillError(f"{name!r} is the name of a built-in Cubbie Skill; choose another name.")
-    if not description or len(description.encode("utf-8")) > MAX_DESCRIPTION:
-        raise SkillError(f"description is required and must be at most {MAX_DESCRIPTION} bytes.")
-    if len(content.encode("utf-8")) > MAX_SKILL_BYTES or len(content.splitlines()) > MAX_BODY_LINES:
-        raise SkillError("SKILL.md must be at most 8 KiB and 500 lines; move details into references/.")
+    if not description or len(description) > MAX_DESCRIPTION_CHARS:
+        raise SkillError(f"description is required and must be at most {MAX_DESCRIPTION_CHARS} characters.")
+    # Every other Markdown file is published next to SKILL.md for Cubbie's file tools.
     for path, raw in files.items():
-        if not path.startswith("references/"):
+        if path == "SKILL.md" or not path.endswith(".md"):
             continue
-        if not path.endswith(".md"):
-            raise SkillError(f"{path}: references must be Markdown files.")
-        if len(raw) > MAX_REFERENCE_BYTES:
-            raise SkillError(f"{path}: references must be at most 16 KiB.")
         try:
             raw.decode("utf-8")
         except UnicodeDecodeError:
-            raise SkillError(f"{path}: references must be UTF-8 text.") from None
+            raise SkillError(f"{path}: Markdown files must be UTF-8 text.") from None
     manifest = parse_manifest(files.get(MANIFEST))
     hashes = {path: hashlib.sha256(raw).hexdigest() for path, raw in sorted(files.items())}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -458,6 +454,9 @@ def validate_package(files: dict[str, bytes], *, directory_name: str,
 
 def warnings_for(package: dict, files: dict[str, bytes], folder: Path) -> list[str]:
     notes = []
+    lines = len(package["skill_md"].splitlines())
+    if lines > MAX_BODY_LINES:
+        notes.append(f"SKILL.md has {lines} lines; the Agent Skills spec recommends under {MAX_BODY_LINES}. Move details into other files.")
     if INSTALL_COMMAND.search(package["skill_md"]):
         notes.append("SKILL.md mentions an install command; Cubbie never runs it. Declare packages in cubbie.yaml.")
     for path in sorted(set(PACKAGE_PATH.findall(package["skill_md"]))):
@@ -492,6 +491,63 @@ def check(folder: Path, reserved_names: frozenset[str] = BUILTIN_SKILL_NAMES, di
             "warnings": warnings_for(package, files, folder)}
 
 
+def pip_name(spec: str) -> str:
+    """PEP 503 normalized project name of `name`, `name[extra]` or `name==1.0`."""
+    return re.sub(r"[-_.]+", "-", re.split(r"[\[=]", spec, maxsplit=1)[0]).lower()
+
+
+def npm_name(spec: str) -> str:
+    """Package name of `name`, `@scope/name` or either with `@version`."""
+    head = spec[1:].partition("@")[0] if spec.startswith("@") else spec.partition("@")[0]
+    return ("@" + head) if spec.startswith("@") else head
+
+
+def version_conflicts(results: list[dict]) -> list[str]:
+    """Skills installed from one link share one set of packages, so they must agree on versions."""
+    owners, problems = {}, []
+    for result in results:
+        if not result["ok"]:
+            continue
+        deps = result["manifest"]["dependencies"]
+        entries = [("pip", pip_name(spec), spec) for spec in deps["pip"]] + \
+                  [("npm", npm_name(spec), spec) for spec in deps["npm"]] + \
+                  [("download", item["bin"], f"{item['bin']} from {item['url']}") for item in deps["download"]]
+        for kind, key, shown in entries:
+            seen = owners.setdefault((kind, key), (shown, result["name"]))
+            if seen[0] != shown:
+                problems.append(f"{result['name']} needs {shown}, but {seen[1]} needs {seen[0]}; "
+                                "Skills installed together must agree on package versions.")
+    return problems
+
+
+def expand(folder: Path) -> tuple[list[Path], str | None]:
+    """The Skill folders a link to `folder` installs: itself when it has SKILL.md, else each Skill
+    directly inside it (or inside its skills/ folder), at most 40."""
+    if not folder.is_dir() or (folder / "SKILL.md").exists():
+        return [folder], None
+    found = {posixpath.dirname(path) for path in folder_files(folder.resolve()) if posixpath.basename(path) == "SKILL.md"}
+    for base in ("", "skills"):
+        children = sorted(path for path in found if path and posixpath.dirname(path) == base)
+        if children:
+            if len(children) > MAX_BUNDLE_SKILLS:
+                return [], f"The link holds {len(children)} Skills; at most {MAX_BUNDLE_SKILLS} can be installed from one link."
+            return [folder / child for child in children], None
+    return [folder], None
+
+
+def check_all(folder: Path, reserved_names: frozenset[str] = BUILTIN_SKILL_NAMES) -> list[dict]:
+    """Check a Skill folder, or every Skill a link to a folder of Skills would install together."""
+    skills, error = expand(folder)
+    if error:
+        return [{"folder": str(folder), "ok": False, "error": error}]
+    results = [check(skill, reserved_names) for skill in skills]
+    if len(results) > 1:
+        conflicts = version_conflicts(results)
+        if conflicts:
+            results.append({"folder": str(folder), "ok": False, "error": conflicts[0]})
+    return results
+
+
 def render(result: dict) -> str:
     if not result["ok"]:
         return f"FAIL {result['folder']}\n  {result['error']}"
@@ -516,10 +572,11 @@ def render(result: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check Skill folders against Cubbie's install rules before pushing them to GitHub.")
-    parser.add_argument("folders", nargs="+", type=Path, help="Skill folders; each folder name must equal the Skill name")
+    parser.add_argument("folders", nargs="+", type=Path,
+                        help="Skill folders (each folder name must equal the Skill name), or a folder of Skills")
     parser.add_argument("--json", action="store_true", help="print one JSON object per folder")
     args = parser.parse_args(argv)
-    results = [check(folder) for folder in args.folders]
+    results = [result for folder in args.folders for result in check_all(folder)]
     for result in results:
         print(json.dumps(result, ensure_ascii=False) if args.json else render(result))
     return 0 if all(result["ok"] for result in results) else 1

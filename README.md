@@ -98,6 +98,11 @@ and doesn't change settings. When the database's `submit_entry`, `my_submissions
 `get_leaderboard` or `update_launch_links` change, update `skills/cubbie-hackathon/scripts/hackathon.py` and
 run both.
 
+`cubbie-skill-creator`'s validator and references follow Cubbie's Skill installer as of 2026-10-23. When the
+installer's rules change (PokeCampus `services/agent-engine/app/skills/package.py`, `source.py`,
+`dependencies.py`, or `docs/hackathon/skill-format.md`), update
+`skills/cubbie-skill-creator/scripts/validate_cubbie_skill.py` and the `references/cubbie-*.md` files to match.
+
 ## License
 
 Apache License 2.0, see [LICENSE](LICENSE). `cubbie-skill-creator` is a modified version of Anthropic's

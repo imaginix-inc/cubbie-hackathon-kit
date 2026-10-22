@@ -84,10 +84,10 @@ Based on the user interview, fill in these components:
 
 **For Cubbie**, also:
 
-- Keep `description` within 320 UTF-8 bytes and the whole `SKILL.md` within 8 KiB and 500 lines; move details into `references/*.md` (Markdown only, 16 KiB each). The folder name must equal `name`, and it must not be the name of a built-in Cubbie skill.
+- Keep `description` within 1024 characters (the Agent Skills limit, which Cubbie enforces) and `SKILL.md` under 500 lines; move details into `references/*.md`. Cubbie publishes every `.md` file in the folder to its file tools, so keep them UTF-8; other files reach only the sandbox. The folder name must equal `name`, and it must not be the name of a built-in Cubbie skill.
 - Name Cubbie's abilities in plain words, and write script steps as commands relative to the skill folder (`python3 scripts/plan.py --course "<name>"`). Add a short "Replies" section following `references/imessage-style.md`.
 - Create `cubbie.yaml` only when scripts need packages, hosts, keys or a login, following `references/cubbie-yaml.md`. Keep `SKILL.md` frontmatter to the standard fields and never put install commands in it; other agents read only `SKILL.md`.
-- Scripts cannot call Cubbie's abilities: have Cubbie fetch the data first and pass it in as arguments or a file, including the student's local date and time (the sandbox clock may be in another time zone). Give each script a `--sample` mode that uses a small bundled file under `assets/` and leaves the student's saved state alone, so it can be tried without keys or network. Save state under `$SKILL_DATA_DIR`.
+- Scripts cannot call Cubbie's abilities: have Cubbie fetch the data first and pass it in as arguments or a file, including the student's local date and time (the sandbox clock may be in another time zone). Give each script a `--sample` mode that uses a small bundled file under `assets/` and leaves the student's saved state alone, so it can be tried without keys or network. Save state under `$SKILL_DATA_DIR`. Don't use exit codes 97 or 98: Cubbie reserves them for "the installed files are missing or changed".
 - Say what to do where an ability is missing, whether an account is not connected or the skill runs outside Cubbie: ask for the data instead, or list the times the user can set reminders for themselves.
 
 ### Skill Writing Guide
@@ -430,7 +430,7 @@ This means your eval queries should be substantive enough that Claude would actu
 
 Take `best_description` from the JSON output and update the skill's SKILL.md frontmatter. Show the user before/after and report the scores.
 
-The optimizer allows descriptions up to 1024 characters, but Cubbie allows 320 UTF-8 bytes. For a Cubbie skill, shorten `best_description` to fit, keeping the strongest triggers, and rerun `scripts/validate_cubbie_skill.py`.
+The optimizer and Cubbie both allow descriptions up to 1024 characters. For a Cubbie skill, rerun `scripts/validate_cubbie_skill.py` after applying it.
 
 The optimizer calls the `claude` CLI, so it runs only where Claude Code is installed. Elsewhere (for example in Codex), review the trigger queries with the user and refine the description by hand.
 
@@ -440,9 +440,9 @@ The optimizer calls the `claude` CLI, so it runs only where Claude Code is insta
 
 Skills are shared as a folder in a public GitHub repository: Cubbie installs from a GitHub link, and Claude Code and Codex users can copy the same folder. When the skill is in good shape:
 
-1. Run `python3 scripts/validate_cubbie_skill.py <path/to/skill-folder>` from this skill-creator's folder (it needs PyYAML, or use `uv run`). Cubbie skills must pass. For other skills it is a quick structure check, and failures about Cubbie's own limits (the 320-byte description, the 8 KiB `SKILL.md`) can be ignored.
+1. Run `python3 scripts/validate_cubbie_skill.py <path/to/skill-folder>` from this skill-creator's folder (it needs PyYAML, or use `uv run`). Cubbie skills must pass. For other skills it is a quick structure check of the Agent Skills basics (frontmatter, name, a description within 1024 characters).
 2. Help the user put the folder in a public repository, as the repository root or as a folder named like the skill, then commit and push. Ask before creating a repository, changing its visibility or pushing.
-3. Run `python3 scripts/github_link.py <path/to/skill-folder>`. It confirms the push and prints a link pinned to the commit; give that link to the user. For a Cubbie skill, also give them the test checklist from `references/cubbie-testing.md`, filled in for this skill.
+3. Run `python3 scripts/github_link.py <path/to/skill-folder>`. It confirms the push, downloads the commit the way Cubbie does, and prints two links: a branch link to test with (texting it again after a push installs the newest commit) and a link pinned to the commit to share or submit once the skill works. For a Cubbie skill, also give the user the test checklist from `references/cubbie-testing.md`, filled in for this skill.
 
 ---
 
@@ -465,7 +465,7 @@ In Claude.ai, the core workflow is the same (draft → test → review → impro
 **Publishing**: `github_link.py` needs git and network access. Without them, give the user the skill folder and the steps from "Publish to GitHub" to run themselves.
 
 **Updating an existing skill**: The user might be asking you to update an existing skill, not create a new one. In this case:
-- **Preserve the original name.** Note the skill's directory name and `name` frontmatter field -- use them unchanged. E.g., if the installed skill is `research-helper`, keep the folder `research-helper/` (not `research-helper-v2`); a Cubbie student updates it by texting "update research-helper".
+- **Preserve the original name.** Note the skill's directory name and `name` frontmatter field -- use them unchanged. E.g., if the installed skill is `research-helper`, keep the folder `research-helper/` (not `research-helper-v2`); a Cubbie student updates it by texting its branch link again.
 - **Copy to a writeable location before editing.** The installed skill path may be read-only. Copy to `/tmp/skill-name/`, edit there, and publish from the copy (or from the user's clone of the skill's repository).
 
 ---
@@ -507,8 +507,8 @@ The references/ directory has additional documentation:
 - `references/cubbie-testing.md` — Local checks, publishing, and the on-Cubbie test checklist
 
 The scripts/ directory has two scripts for publishing, alongside the eval scripts:
-- `scripts/validate_cubbie_skill.py` — The checks Cubbie runs when a student sends the link (needs only PyYAML)
-- `scripts/github_link.py` — Confirms the skill is pushed and public, and prints the pinned install link
+- `scripts/validate_cubbie_skill.py` — The checks Cubbie runs when a student sends the link, including a folder of Skills (needs only PyYAML)
+- `scripts/github_link.py` — Confirms the skill is pushed and public, downloads it the way Cubbie does, and prints the branch and pinned install links
 
 ---
 

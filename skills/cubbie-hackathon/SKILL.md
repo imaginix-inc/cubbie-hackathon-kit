@@ -44,21 +44,23 @@ Walk the team through these steps, one at a time, and skip what they've already 
    one concrete situation a student would text about.
 2. **Build it with `cubbie-skill-creator`** (in this kit; in Codex, `$cubbie-skill-creator`). Hand over: the
    moment, that it's a Track 1 entry for the Cubbie Hackathon, and that it has to end in a public GitHub repo.
-   It interviews them, writes the Skill, checks it against Cubbie's install rules, helps publish it, and prints the
-   pinned install link plus a checklist for testing on their own Cubbie. If that skill isn't installed, point them
-   to the kit's README.
-3. **Test on Cubbie.** They text the install link to Cubbie and go through the checklist. Fix, push, repeat.
+   It interviews them, writes the Skill, checks it against Cubbie's install rules, helps publish it, and prints two
+   links (a branch link and a link pinned to the commit) plus a checklist for testing on their own Cubbie. If that
+   skill isn't installed, point them to the kit's README.
+3. **Test on Cubbie.** They text the branch link to Cubbie and go through the checklist. After each fix: push, text
+   the branch link again (that installs the newest push), repeat.
 4. **Demo video.** A short video showing the student moment and Cubbie handling it, posted publicly on TikTok or
    Instagram (the only platforms the form accepts). Help with a script or shot list if they want: the problem in
    a sentence, the real iMessage exchange, the result.
-5. **Submit** (section 4): Skill link, platform, post link, team, one-liner. They can submit as soon as they have
+5. **Submit** (section 4): the pinned link, platform, post link, team, one-liner. The pinned link always installs
+   exactly what they tested, for voters too. They can submit as soon as they have
    a repo and a post, then keep editing while the window is open.
 6. **Reach.** Votes need a school email and happen on the site; social views, likes, comments and shares are read
    automatically. More posts with the demo (up to 5 besides the main one) can be added with `posts` until voting
    closes.
 
-When the Skill changes after submitting, push, get the new pinned link from `cubbie-skill-creator`
-(`scripts/github_link.py`), and update the entry with `submit --track skills --repo <new link>`.
+When the Skill changes after submitting, push, get the new pinned link from `cubbie-skill-creator` (its
+`github_link.py` script), and update the entry with `submit --track skills --repo <new link>`.
 
 ## 3. Tracks 2 and 3
 
