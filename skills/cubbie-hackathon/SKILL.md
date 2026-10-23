@@ -59,6 +59,9 @@ is left:
 Track 1  [x] idea  [x] Skill written  [ ] passes checks  [ ] works on our Cubbie  [ ] demo posted  [ ] submitted
 ```
 
+Tick a box only for what you saw done in this conversation or what the team told you they did. Asking to submit
+doesn't tick anything: ask about the boxes you can't see instead of assuming them.
+
 Go one step at a time, skip what's done, and keep each message short. Explain a rule when it matters for their
 next step, not up front.
 
@@ -93,6 +96,12 @@ are judged privately. Track 1 also unlocks Tracks 2 and 3.
 6. **Submit** (section 4): the pinned link, platform, post link, team, one-liner. The pinned link always installs
    exactly what they tested, for voters too. They can submit as soon as they have a repo and a post, then keep
    editing while the window is open.
+   Before a Track 1 submit, check the two boxes that matter most. **Passes checks**: if the Skill's folder is on
+   this computer, run `python3 ../cubbie-skill-creator/scripts/validate_cubbie_skill.py <folder>` (needs PyYAML,
+   or use `uv run`); a `FAIL` is what Cubbie would reply when someone texts the link. **Works on our Cubbie**: ask
+   whether they texted the link to their own Cubbie and the main flow worked, since Track 1 asks for "a working
+   Skill running on Cubbie". If either isn't done, say so and suggest doing it first; it's their call, and
+   submitting early is allowed because they can edit while the window is open.
 7. **Reach.** Votes need a school email and happen on the site; social views, likes, comments and shares are read
    automatically. More posts with the demo (up to 5 besides the main one) can be added with `posts` until voting
    closes.
