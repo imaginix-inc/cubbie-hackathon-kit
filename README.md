@@ -18,6 +18,17 @@ New to Agent Skills? The [overview](https://agentskills.io), the
 [authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices).
 You don't need them to take part: the skills carry what your agent needs to know about Cubbie.
 
+## The quickest way: paste a prompt
+
+Paste this into ChatGPT, Claude, Gemini, Claude Code, Codex, Cursor or any other AI:
+
+```text
+I'm taking part in the Cubbie Hackathon. Read https://hackathon.cubbie.ai/skill.md and help my team, step by step.
+```
+
+That page tells the AI where this kit is and how to use it. To have the skills load every time instead, install
+them:
+
 ## Install
 
 ### Claude Code
