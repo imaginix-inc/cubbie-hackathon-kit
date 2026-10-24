@@ -7,7 +7,7 @@ description: Create new skills, modify and improve existing skills, and measure 
 
 A skill for creating new skills and iteratively improving them.
 
-This is Anthropic's skill-creator with additions for Cubbie, an AI assistant that lives in students' iMessage and installs a skill when a student texts it the skill's GitHub link. When the skill is meant for Cubbie, the interview, drafting, testing and publishing steps below have Cubbie branches. Everything else is unchanged, and the result stays a standard [Agent Skill](https://agentskills.io) that also works in Claude Code, Codex and other agents.
+This is Anthropic's skill-creator with additions for Cubbie, an AI assistant that lives in students' iMessage and installs a skill when a student texts it a link to the skill's folder (on GitHub or any other https git host). When the skill is meant for Cubbie, the interview, drafting, testing and publishing steps below have Cubbie branches. Everything else is unchanged, and the result stays a standard [Agent Skill](https://agentskills.io) that also works in Claude Code, Codex and other agents.
 
 At a high level, the process of creating a skill goes like this:
 
@@ -54,7 +54,7 @@ Start by understanding the user's intent. The current conversation might already
 2. When should this skill trigger? (what user phrases/contexts)
 3. What's the expected output format?
 4. Should we set up test cases to verify the skill works? Skills with objectively verifiable outputs (file transforms, data extraction, code generation, fixed workflow steps) benefit from test cases. Skills with subjective outputs (writing style, art) often don't need them. Suggest the appropriate default based on the skill type, but let the user decide.
-5. Where will the skill run? If the user mentions Cubbie, iMessage, the hackathon, or students installing it from a GitHub link, the target is Cubbie: also follow "When the target is Cubbie" below.
+5. Where will the skill run? If the user mentions Cubbie, iMessage, the hackathon, or students installing it from a link, the target is Cubbie: also follow "When the target is Cubbie" below.
 
 ### Interview and Research
 
@@ -437,11 +437,11 @@ The optimizer calls the `claude` CLI, so it runs only where Claude Code is insta
 
 ### Publish to GitHub
 
-Skills are shared as a folder in a public GitHub repository: Cubbie installs from a GitHub link, and Claude Code and Codex users can copy the same folder. When the skill is in good shape:
+Skills are shared as a folder in a public git repository, on GitHub for the hackathon: Cubbie installs from a link to it (any https git host works), and Claude Code and Codex users can copy the same folder. When the skill is in good shape:
 
 1. Run `python3 scripts/validate_cubbie_skill.py <path/to/skill-folder>` from this skill-creator's folder (it needs PyYAML, or use `uv run`). Cubbie skills must pass. For other skills it is a quick structure check of the Agent Skills basics (frontmatter, name, a description within 1024 characters).
 2. Help the user put the folder in a public repository, as the repository root or as a folder named like the skill, then commit and push. Ask before creating a repository, changing its visibility or pushing.
-3. Run `python3 scripts/github_link.py <path/to/skill-folder>`. It confirms the push, downloads the commit the way Cubbie does, and prints two links: a branch link to test with (texting it again after a push installs the newest commit) and a link pinned to the commit to share or submit once the skill works. For a Cubbie skill, also give the user the test checklist from `references/cubbie-testing.md`, filled in for this skill.
+3. Run `python3 scripts/github_link.py <path/to/skill-folder>`. It confirms the push, checks that the repository can be read without a sign-in as Cubbie would, and prints two links: a branch link to test with (texting it again after a push installs the newest commit) and a link pinned to the commit to share or submit once the skill works. For a Cubbie skill, also give the user the test checklist from `references/cubbie-testing.md`, filled in for this skill.
 
 ---
 

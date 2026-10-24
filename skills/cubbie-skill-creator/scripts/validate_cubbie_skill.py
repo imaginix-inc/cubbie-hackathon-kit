@@ -3,17 +3,21 @@
 # requires-python = ">=3.9"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Check Skill folders with the rules Cubbie applies when a student installs a Skill from GitHub.
+"""Check Skill folders with the rules Cubbie applies when a student installs a Skill from a link.
 
     python3 scripts/validate_cubbie_skill.py <skill-folder>...    # needs PyYAML
     uv run scripts/validate_cubbie_skill.py <skill-folder>...     # installs PyYAML on the fly
 
-The checks follow Cubbie's installer as of 2026-10-24: a Skill is a plain folder installed as it is.
-Cubbie refuses only a folder without a readable SKILL.md (or with no description and no text to take
-one from), symbolic links, and folders over the file limits; it repairs the rest (a name that is not
-lowercase, missing or already taken; a missing description; frontmatter that is not valid YAML) and
-says so in the install summary. cubbie.yaml is no longer read. A folder without SKILL.md is checked
-the way a link to it installs: every Skill directly inside it, or inside its skills/ folder.
+The checks follow Cubbie's installer (app/skills/source.py and package.py) as of 2026-10-24: a Skill
+is a plain folder installed as it is. Cubbie refuses only a folder without a readable SKILL.md (or
+with no description and no text to take one from) and folders over 1000 files or 50 MiB; it repairs
+the rest (a name that is not lowercase, missing or already taken; a missing description; frontmatter
+that is not valid YAML) and says so in the install summary. A link to a file elsewhere in the
+repository is installed as a copy of it; other links, git submodules and the large files behind Git
+LFS pointers are left out, also said in the summary. .git and node_modules are never copied, and
+cubbie.yaml is no longer read. A folder without SKILL.md is checked the way a link to it installs:
+every folder inside it that has one, however deep (.claude/skills/<name>, .agents/skills/<name>, ...),
+the outermost where Skills nest, at most 40.
 The report also lists what the student sees before confirming: the install commands your files give,
 the commands SKILL.md says it needs, and the environment variables (keys) your files read.
 Nothing is installed or run, and no website is contacted.
@@ -48,10 +52,11 @@ MAX_NAME_CHARS = 64
 MAX_DESCRIPTION_CHARS = 1024  # the Agent Skills limit
 MAX_LIST_DESCRIPTION_CHARS = 200  # what the per-turn Skill list shows: the first sentence, cut to this
 MAX_BODY_LINES = 500  # recommended by the Agent Skills spec; a warning only
-MAX_FILES = 300
-MAX_TOTAL_BYTES = 10 * 1024 * 1024
-MAX_FILE_BYTES = 1024 * 1024
+MAX_FILES = 1000
+MAX_TOTAL_BYTES = 50 * 1024 * 1024
 MAX_BUNDLE_SKILLS = 40
+SKIPPED_DIRS = {".git", "node_modules"}
+LFS_POINTER = b"version https://git-lfs.github.com/spec/v1"
 LENIENT_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(?:|(.*?)\r?\n)---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 TOP_LEVEL_KEY = re.compile(r"^([A-Za-z_][\w.-]*)[ \t]*:(?:[ \t]+(.*))?$")
 BLOCK_SCALAR = re.compile(r"^[|>][+-]?$")
@@ -99,28 +104,87 @@ def folder_files(folder: Path) -> list[str]:
     return sorted(paths)
 
 
-def read_files(folder: Path, paths: list[str]) -> dict[str, bytes]:
-    """Read the folder the way Cubbie unpacks a GitHub archive: regular files only, within the size limits."""
-    files: dict[str, bytes] = {}
-    total = 0
+def _skipped(path: str) -> bool:
+    return bool(SKIPPED_DIRS & set(path.split("/")[:-1]))
+
+
+def _regular(path: Path) -> bool:
+    return stat.S_ISREG(os.lstat(path).st_mode) if os.path.lexists(path) else False
+
+
+def repository(folder: Path) -> tuple[Path, str]:
+    """The root a link's target must stay inside (the git repository, else the folder) and the folder's path in it."""
+    top = _git(folder, "rev-parse", "--show-toplevel")
+    root = Path(top.strip()).resolve() if top else folder
+    inside = folder.relative_to(root).as_posix()
+    return root, "" if inside == "." else inside
+
+
+def lfs_files(folder: Path, paths: list[str]) -> set[str]:
+    """Paths stored through Git LFS: Cubbie fetches without LFS, so it gets their pointer files."""
+    try:
+        listed = subprocess.run(["git", "-C", str(folder), "check-attr", "-z", "--stdin", "filter"], input="".join(path + "\0" for path in paths),
+                                capture_output=True, check=True, text=True).stdout.split("\0")
+    except (OSError, subprocess.CalledProcessError):
+        return set()
+    return {path for path, _, value in zip(listed[0::3], listed[1::3], listed[2::3]) if value == "lfs"}
+
+
+def read_files(folder: Path, paths: list[str]) -> tuple[dict[str, bytes], list[str]]:
+    """Read the folder the way Cubbie's installer reads a fetched repository, and what it changes or leaves out.
+
+    A symbolic link to a file elsewhere in the repository is installed as a copy of it; links that leave
+    the repository, point at folders, links or nothing are left out, and so are git submodules. .git and
+    node_modules are not copied. A folder over MAX_FILES files or MAX_TOTAL_BYTES is refused.
+    """
+    root, where = repository(folder)
+    entries = []
     for path in paths:
         relative = posixpath.normpath(path)
         if relative.startswith("../") or relative == ".." or relative.startswith("/"):
             raise SkillError("The Skill contains a path outside its folder.")
-        info = os.lstat(folder / path)
-        if stat.S_ISDIR(info.st_mode):
+        if os.path.islink(folder / path) or not os.path.isdir(folder / path):
+            entries.append((relative, os.lstat(folder / path).st_size))
+    # Fetching checks every file and link in the folder first, node_modules included.
+    if len(entries) > MAX_FILES or sum(size for _, size in entries) > MAX_TOTAL_BYTES:
+        raise SkillError(f"{where or 'The Skill'} has {len(entries)} files and {sum(size for _, size in entries) // 1048576} MiB; "
+                         f"a Skill can have at most {MAX_FILES} files and {MAX_TOTAL_BYTES // 1048576} MiB.")
+    files: dict[str, bytes] = {}
+    notes: list[str] = []
+    published = None
+    stored_in_lfs = lfs_files(folder, [path for path, _ in entries])
+    for inside, _ in entries:
+        if _skipped(inside):
             continue
-        if not stat.S_ISREG(info.st_mode):
-            raise SkillError(f"{relative}: links and special files are not allowed in a Skill.")
-        if info.st_size > MAX_FILE_BYTES:
-            raise SkillError(f"{relative}: files must be at most 1 MiB.")
-        total += info.st_size
-        if len(files) >= MAX_FILES or total > MAX_TOTAL_BYTES:
-            raise SkillError("A Skill can have at most 300 files and 10 MiB in total.")
-        files[relative] = (folder / path).read_bytes()
+        source = folder / inside
+        if os.path.islink(source):
+            link = os.readlink(source)
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(posixpath.join(where, inside)), link))
+            if published is None:
+                published = set(folder_files(root))
+            if (link.startswith("/") or target == ".." or target.startswith("../") or target not in published
+                    or _skipped(target) or not _regular(root / target)):
+                notes.append(f"{inside} is a link to {link}, which is not a file in the repository; it was left out.")
+                continue
+            notes.append(f"{inside} is a link to {link}; it is installed as a copy.")
+            data, stored = (root / target).read_bytes(), target in lfs_files(root, [target])
+        elif stat.S_ISREG(os.lstat(source).st_mode):
+            data, stored = source.read_bytes(), inside in stored_in_lfs
+        else:
+            continue
+        if stored or data.startswith(LFS_POINTER):
+            notes.append(f"{inside} is a Git LFS pointer; the large file itself is not included.")
+        files[inside] = data
+    if len(files) > MAX_FILES or sum(map(len, files.values())) > MAX_TOTAL_BYTES:
+        raise SkillError(f"A Skill can have at most {MAX_FILES} files and {MAX_TOTAL_BYTES // 1048576} MiB in total.")
     if "SKILL.md" not in files:
         raise SkillError("No SKILL.md was found at the linked folder.")
-    return files
+    for line in (_git(folder, "ls-files", "-s", "-z", "--", ".") or "").split("\0"):
+        meta, _, path = line.partition("\t")
+        if meta.startswith("160000 "):  # a submodule's files are never part of the repository's commit
+            path = posixpath.join(where, path)
+            notes.append(f"{path} is a git submodule; its files are not included.")
+    return files, notes
 
 
 # ---------------------------------------------------------------- SKILL.md
@@ -308,8 +372,8 @@ def read_package(files: dict, name: str, name_fix=None) -> dict:
 # ---------------------------------------------------------------- report
 
 
-def warnings_for(package: dict, files: dict, folder: Path) -> list:
-    notes = [f"Cubbie would fix this on install: {fix}" for fix in package["fixes"]]
+def warnings_for(package: dict, files: dict, folder: Path, changes=()) -> list:
+    notes = [f"Cubbie would fix this on install: {fix}" for fix in [*package["fixes"], *changes]]
     lines = len(package["skill_md"].splitlines())
     if lines > MAX_BODY_LINES:
         notes.append(f"SKILL.md has {lines} lines; the Agent Skills spec recommends under {MAX_BODY_LINES}. Move details into other files.")
@@ -331,18 +395,24 @@ def warnings_for(package: dict, files: dict, folder: Path) -> list:
 
 
 def expand(folder: Path) -> tuple:
-    """The Skill folders a link to `folder` installs: itself when it has SKILL.md, else each Skill
-    directly inside it (or inside its skills/ folder), at most 40."""
-    if not folder.is_dir() or (folder / "SKILL.md").exists():
+    """The Skill folders a link to `folder` installs: itself when it has SKILL.md, else every folder inside it
+    that has one, however deep, the outermost where Skills nest; .git and node_modules are not searched. At most 40."""
+    if not folder.is_dir() or _regular(folder / "SKILL.md"):
         return [folder], None
-    found = {posixpath.dirname(path) for path in folder_files(folder.resolve()) if posixpath.basename(path) == "SKILL.md"}
-    for base in ("", "skills"):
-        children = sorted(path for path in found if path and posixpath.dirname(path) == base)
-        if children:
-            if len(children) > MAX_BUNDLE_SKILLS:
-                return [], f"The link holds {len(children)} Skills; at most {MAX_BUNDLE_SKILLS} can be installed from one link."
-            return [folder / child for child in children], None
-    return [folder], None
+    root = folder.resolve()
+    found = sorted({posixpath.dirname(path) for path in folder_files(root)
+                    if posixpath.basename(path) == "SKILL.md" and not _skipped(path) and _regular(root / path)},
+                   key=lambda path: (path.count("/"), path))
+    outer = []
+    for path in found:
+        if not any(path.startswith(parent + "/") for parent in outer):
+            outer.append(path)
+    if len(outer) > MAX_BUNDLE_SKILLS:
+        return [], (f"The link holds {len(outer)} Skills; at most {MAX_BUNDLE_SKILLS} can be installed from one link. "
+                    "Send a link to a folder with fewer.")
+    if not outer:
+        return [], "No SKILL.md was found at the linked folder or in the folders inside it."
+    return [folder / path for path in sorted(outer)], None
 
 
 def check_all(folder: Path, reserved_names: frozenset = BUILTIN_SKILL_NAMES) -> list:
@@ -350,15 +420,16 @@ def check_all(folder: Path, reserved_names: frozenset = BUILTIN_SKILL_NAMES) -> 
     skills, error = expand(folder)
     if error:
         return [{"folder": str(folder), "ok": False, "error": error}]
-    results, readable = {}, {}
+    results, readable, changes = {}, {}, {}
     for skill in skills:
         shown, resolved = str(skill), skill.resolve()
         if not resolved.is_dir():
             results[shown] = {"folder": shown, "ok": False, "error": "Not a folder."}
             continue
         try:
-            readable[shown] = (resolved, read_files(resolved, folder_files(resolved)))
-            read_skill_md(readable[shown][1])
+            files, changes[shown] = read_files(resolved, folder_files(resolved))
+            readable[shown] = (resolved, files)
+            read_skill_md(files)
         except SkillError as exc:
             results[shown] = {"folder": shown, "ok": False, "error": str(exc)}
             readable.pop(shown, None)
@@ -375,7 +446,7 @@ def check_all(folder: Path, reserved_names: frozenset = BUILTIN_SKILL_NAMES) -> 
                           "listed_as": package["listed_as"], "files": len(files), "bytes": sum(len(data) for data in files.values()),
                           "package_sha256": package["package_sha256"], "commands": package["commands"],
                           "install_lines": package["install_lines"], "env": package["env"],
-                          "warnings": warnings_for(package, files, resolved)}
+                          "warnings": warnings_for(package, files, resolved, changes[shown])}
     return [results[str(skill)] for skill in skills]
 
 
@@ -397,7 +468,7 @@ def render(result: dict) -> str:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Check Skill folders against Cubbie's install rules before pushing them to GitHub.")
+    parser = argparse.ArgumentParser(description="Check Skill folders against Cubbie's install rules before pushing them.")
     parser.add_argument("folders", nargs="+", type=Path, help="Skill folders, or a folder of Skills")
     parser.add_argument("--json", action="store_true", help="print one JSON object per folder")
     args = parser.parse_args(argv)
