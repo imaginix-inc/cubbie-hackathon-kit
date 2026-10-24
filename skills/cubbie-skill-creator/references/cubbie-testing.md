@@ -18,8 +18,8 @@ python3 <creator>/scripts/validate_cubbie_skill.py <skill-folder>
   `SKILL.md` is checked as a folder of Skills: every folder inside it that has one, however deep (`skills/<name>`,
   `.claude/skills/<name>`, `.agents/skills/<name>`, ...), the outermost where Skills nest.
 - `warning:` lines don't block anything, but read each one: a missing name or description (Cubbie then lists the
-  Skill by its folder name and first paragraph), a description longer than the 200 or so characters Cubbie's Skill
-  list shows, frontmatter that isn't valid YAML, a name or fields other agents may reject, a leftover `cubbie.yaml`
+  Skill by its folder name and first paragraph), a description whose first sentence is longer than the 200 characters
+  Cubbie's Skill list shows, frontmatter that isn't valid YAML, a name or fields other agents may reject, a leftover `cubbie.yaml`
   (not needed, ignored), files the instructions mention that don't exist, links to files outside the folder, very
   large files or repositories (slow to clone), and uncommitted changes.
 - It does not install packages, run scripts or contact websites.

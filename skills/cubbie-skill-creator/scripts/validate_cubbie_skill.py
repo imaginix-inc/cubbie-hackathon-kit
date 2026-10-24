@@ -39,7 +39,8 @@ except ImportError:  # pragma: no cover - exercised by hand
 NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # the Agent Skills name rule
 MAX_NAME_CHARS = 64
 MAX_DESCRIPTION_CHARS = 1024  # the Agent Skills limit
-LIST_DESCRIPTION_CHARS = 200  # about what Cubbie's Skill list shows of a description
+LIST_DESCRIPTION_CHARS = 200  # Cubbie's Skill list shows a description's first sentence, cut at this length
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])")
 MAX_BODY_LINES = 500  # recommended by the Agent Skills spec
 LARGE_FILE_BYTES = 10 * 1024 * 1024
 LARGE_REPOSITORY_BYTES = 100 * 1024 * 1024
@@ -190,12 +191,12 @@ def check_skill(folder: Path, shown: str) -> dict:
                      "Write one that says what the Skill does and when to use it." if listed else
                      "SKILL.md gives no description and has no paragraph to take one from; "
                      "write one that says what the Skill does and when to use it.")
+    first = SENTENCE_END.split(description.strip(), maxsplit=1)[0].strip()
     if len(description) > MAX_DESCRIPTION_CHARS:
-        notes.append(f"The description has {len(description)} characters; the Agent Skills format allows "
-                     f"{MAX_DESCRIPTION_CHARS}, and Cubbie's Skill list shows about the first {LIST_DESCRIPTION_CHARS}.")
-    elif len(description) > LIST_DESCRIPTION_CHARS:
-        notes.append(f"The description has {len(description)} characters; Cubbie's Skill list shows about the first "
-                     f"{LIST_DESCRIPTION_CHARS}, so say what the Skill does and when to use it within them.")
+        notes.append(f"The description has {len(description)} characters; the Agent Skills format allows {MAX_DESCRIPTION_CHARS}.")
+    if len(first) > LIST_DESCRIPTION_CHARS:
+        notes.append(f"The description's first sentence has {len(first)} characters; Cubbie's Skill list shows only the first "
+                     f"sentence, cut at {LIST_DESCRIPTION_CHARS}, so say what the Skill does in a shorter first sentence.")
     extra = sorted(str(key) for key in fields if key not in SPEC_FIELDS)
     if extra:
         notes.append(f"Frontmatter field(s) {', '.join(extra)} are not in the Agent Skills format; other agents may reject them.")

@@ -1,6 +1,6 @@
 ---
 name: weather-before-class
-description: Checks the next hours of weather in the student's city and says whether to bring an umbrella or a jacket. Use when the student asks about rain, the weather or what to wear before class.
+description: Checks the next hours of weather in the student's city and says whether to bring an umbrella or a jacket. Use when the student asks about rain, the weather, what to wear, or whether they need an umbrella before class.
 ---
 
 # Weather Before Class

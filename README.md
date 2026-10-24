@@ -129,8 +129,8 @@ run both.
 has no Skill installer of its own: it asks the student first, fetches a Skill's link with ordinary commands (such as
 `git clone`), and lists the Skills it finds in `/user/skills/`, `~/.agents/skills/` and `~/.claude/skills/`. The
 validator fails only a folder without a readable `SKILL.md`; everything else, including the Cubbie hints (a
-description longer than the roughly 200 characters Cubbie's Skill list shows, a leftover `cubbie.yaml`), is a
-warning. When the Agent Skills format or Cubbie's handling of Skills changes, update
+description whose first sentence is longer than the 200 characters Cubbie's Skill list shows, a leftover
+`cubbie.yaml`), is a warning. When the Agent Skills format or Cubbie's handling of Skills changes, update
 `skills/cubbie-skill-creator/scripts/validate_cubbie_skill.py`, the `references/cubbie-*.md` files and
 `examples/README.md` to match.
 

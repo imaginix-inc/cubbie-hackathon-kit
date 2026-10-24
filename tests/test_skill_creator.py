@@ -109,12 +109,16 @@ class SkillChecksTest(unittest.TestCase):
         git(self.root, "add", "-A")
         git(self.root, "commit", "-qm", "short")
         self.assertEqual(self.check("short")["warnings"], [])
-        for chars, expected in ((201, "Cubbie's Skill list shows about the first 200"), (1025, "the Agent Skills format allows 1024")):
+        for chars, expected in ((201, "Cubbie's Skill list shows only the first sentence"), (1025, "the Agent Skills format allows 1024")):
             (self.root / f"long{chars}").mkdir()
             (self.root / f"long{chars}/SKILL.md").write_text(f"---\nname: long\ndescription: {'x' * chars}\n---\n")
             result = self.check(f"long{chars}")
             self.assertTrue(result["ok"])
             self.assertIn(expected, " ".join(result["warnings"]))
+        # Only the first sentence is listed, so a long description with a short first sentence is fine.
+        (self.root / "sentences").mkdir()
+        (self.root / "sentences/SKILL.md").write_text(f"---\nname: sentences\ndescription: Does a thing. {'y' * 300}\n---\n")
+        self.assertFalse([note for note in self.check("sentences")["warnings"] if "first sentence" in note])
         skill(self.root, "Weather Buddy", "Weather Buddy")
         result = self.check("Weather Buddy")
         self.assertEqual(result["name"], "Weather Buddy")
