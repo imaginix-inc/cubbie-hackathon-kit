@@ -17,7 +17,7 @@ is "Teach Cubbie a new trick": build a Skill students would miss if it disappear
 | --- | --- | --- | --- |
 | Who | Every team; it unlocks Tracks 2 and 3 | Teams that submitted Track 1 | Teams that submitted Track 1 |
 | Built on | A Cubbie Skill, run by Cubbie | Anything: any messaging app, any open-source framework | Same as Track 2 |
-| Hand in | Skill's GitHub repo + public TikTok or Instagram post with the demo video | GitHub repo; website and demo video optional | Same as Track 2 |
+| Hand in | Skill's GitHub repo (the repository link); a public TikTok or Instagram post with the demo video is optional | GitHub repo; website and demo video optional | Same as Track 2 |
 | Winners | Public votes on the site + the video's social engagement | Judges, privately | Judges, privately |
 | Window | `skills_*` (see `status`) | `general_*`, shared with Track 3 | `general_*`, shared with Track 2 |
 
@@ -42,7 +42,7 @@ How it works (from the site):
 Show us:
 - A working Skill running on Cubbie.
 - A clear student use case.
-- A short public video showing its value.
+- A short public video showing its value (optional to submit; it counts toward the social score when posted).
 
 Judging: "Post your video on social media and get it in front of students. Judges mainly look at public votes on
 this site and your video's engagement on social media." The demo goes on TikTok or Instagram (the only two
@@ -107,7 +107,8 @@ Discord, and one student is drawn to win a PS5.
 
 Field limits: team name and project name up to 60 characters (project name defaults to the team name), one-liner
 up to 140, 1 to 4 members with distinct emails, every link `https://`. Track 1: the Skill link must be a GitHub
-repo (`https://github.com/<owner>/<repo>` or a folder inside it) and the post must be on the platform picked.
+repo (`https://github.com/<owner>/<repo>`, the repository link, or a folder inside it); the post is optional and,
+when given, must be on the platform picked.
 Tracks 2 and 3: GitHub repo required; website (one link) and demo video optional.
 
 ## Voting (Track 1 only)

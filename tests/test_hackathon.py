@@ -161,6 +161,13 @@ class Checks(unittest.TestCase):
             e = dict(TRACK1, **{key: value})
             self.assertTrue(any(expected in p for p in hk.check_entry("skills", e)), (key, hk.check_entry("skills", e)))
 
+    def test_track1_social_post_is_optional(self):
+        none = dict(TRACK1, platform="", post="")
+        self.assertEqual(hk.check_entry("skills", none), [])
+        self.assertIn("Social post: (none)", hk.entry_text("skills", none))
+        self.assertIn("needs its platform", " ".join(hk.check_entry("skills", dict(none, post="https://www.tiktok.com/@a/video/1"))))
+        self.assertIn("post is optional", " ".join(hk.check_entry("skills", dict(none, platform="tiktok"))))
+
     def test_members(self):
         five = [{"name": f"P{i}", "email": f"p{i}@school.edu"} for i in range(5)]
         self.assertIn("List 1 to 4", " ".join(hk.check_entry("skills", dict(TRACK1, members=five))))
