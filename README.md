@@ -7,7 +7,7 @@ teach it a new trick.
 | Skill | What it does |
 | --- | --- |
 | [`cubbie-hackathon`](skills/cubbie-hackathon) | Explains the three tracks, what each needs and how it is judged; reads the open and close times live from the hackathon site; walks your team through Track 1 and then Tracks 2 and 3; signs you in with Google or an email code and submits or edits your team's entry, so you don't need the website for that. |
-| [`cubbie-skill-creator`](skills/cubbie-skill-creator) | Writes your Track 1 Cubbie Skill with you: interview, draft, checks against Cubbie's install rules, publishing to GitHub, and the link you text to Cubbie to install it. Based on Anthropic's skill-creator. |
+| [`cubbie-skill-creator`](skills/cubbie-skill-creator) | Writes your Track 1 Cubbie Skill with you: interview, draft, a check of the Skill folder, publishing to GitHub, and the link you text to Cubbie to install it. Based on Anthropic's skill-creator. |
 
 Both are standard [Agent Skills](https://agentskills.io). [`examples/`](examples) has three small Cubbie Skills
 you can text to Cubbie to see one install and run before you write your own.
@@ -115,7 +115,7 @@ Rules, prizes and dates are on [hackathon.cubbie.ai](https://hackathon.cubbie.ai
 ## For maintainers
 
 ```bash
-python3 -m unittest discover -s tests   # offline tests of the submit script
+python3 -m unittest discover -s tests   # offline tests of the submit script and the skill-creator scripts
 python3 tests/live_test.py              # against the hosted project; needs `supabase login` with project access
 ```
 
@@ -125,10 +125,14 @@ and doesn't change settings. When the database's `submit_entry`, `my_submissions
 `get_leaderboard` or `update_launch_links` change, update `skills/cubbie-hackathon/scripts/hackathon.py` and
 run both.
 
-`cubbie-skill-creator`'s validator and references follow Cubbie's Skill installer as of 2026-10-23. When the
-installer's rules change (PokeCampus `services/agent-engine/app/skills/package.py`, `source.py`,
-`dependencies.py`, or `docs/hackathon/skill-format.md`), update
-`skills/cubbie-skill-creator/scripts/validate_cubbie_skill.py` and the `references/cubbie-*.md` files to match.
+`cubbie-skill-creator`'s validator follows the [Agent Skills format](https://agentskills.io/specification). Cubbie
+has no Skill installer of its own: it asks the student first, fetches a Skill's link with ordinary commands (such as
+`git clone`), and lists the Skills it finds in `/user/skills/`, `~/.agents/skills/` and `~/.claude/skills/`. The
+validator fails only a folder without a readable `SKILL.md`; everything else, including the Cubbie hints (a
+description longer than the roughly 200 characters Cubbie's Skill list shows, a leftover `cubbie.yaml`), is a
+warning. When the Agent Skills format or Cubbie's handling of Skills changes, update
+`skills/cubbie-skill-creator/scripts/validate_cubbie_skill.py`, the `references/cubbie-*.md` files and
+`examples/README.md` to match.
 
 ## License
 

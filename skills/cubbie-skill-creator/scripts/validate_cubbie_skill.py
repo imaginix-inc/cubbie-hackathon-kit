@@ -3,39 +3,32 @@
 # requires-python = ">=3.9"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Check Skill folders with the rules Cubbie applies when a student installs a Skill from a link.
+"""Check Skill folders before you publish them for Cubbie (or any agent that reads Agent Skills).
 
     python3 scripts/validate_cubbie_skill.py <skill-folder>...    # needs PyYAML
     uv run scripts/validate_cubbie_skill.py <skill-folder>...     # installs PyYAML on the fly
 
-The checks follow Cubbie's installer (app/skills/source.py and package.py) as of 2026-10-24: a Skill
-is a plain folder installed as it is. Cubbie refuses only a folder without a readable SKILL.md (or
-with no description and no text to take one from) and folders over 1000 files or 50 MiB; it repairs
-the rest (a name that is not lowercase, missing or already taken; a missing description; frontmatter
-that is not valid YAML) and says so in the install summary. A link to a file elsewhere in the
-repository is installed as a copy of it; other links, git submodules and the large files behind Git
-LFS pointers are left out, also said in the summary. .git and node_modules are never copied, and
-cubbie.yaml is no longer read. A folder without SKILL.md is checked the way a link to it installs:
-every folder inside it that has one, however deep (.claude/skills/<name>, .agents/skills/<name>, ...),
-the outermost where Skills nest, at most 40.
-The report also lists what the student sees before confirming: the install commands your files give,
-the commands SKILL.md says it needs, and the environment variables (keys) your files read.
-Nothing is installed or run, and no website is contacted.
+The checks follow the Agent Skills format (https://agentskills.io/specification). A Skill is any folder
+with a SKILL.md, and a folder without a readable one is the only FAIL. Everything else is a warning,
+because Cubbie copes: it lists a Skill by the `name` and `description` in its frontmatter, and without
+them by the folder name and the first paragraph. Cubbie has no install rules of its own (no cubbie.yaml,
+no limits on files, size or the number of Skills): it fetches a link with ordinary commands such as
+`git clone`. The warnings point out what makes a Skill harder to find, harder to read or slower to fetch.
+
+A folder without SKILL.md is checked as a folder of Skills: every folder inside it that has one, however
+deep, the outermost where Skills nest. Nothing is installed or run, and no website is contacted.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import itertools
+import functools
 import json
 import os
 import posixpath
 import re
-import stat
 import subprocess
 import sys
-import unicodedata
 from pathlib import Path
 
 try:
@@ -43,42 +36,23 @@ try:
 except ImportError:  # pragma: no cover - exercised by hand
     sys.exit("PyYAML is missing: run `pip install pyyaml`, or use `uv run scripts/validate_cubbie_skill.py`.")
 
-# Names of Skills built into Cubbie; a user Skill with one of them gets -2.
-BUILTIN_SKILL_NAMES = frozenset({"email-to-professor", "study-plan-builder"})
-
-NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-NOT_NAME = re.compile(r"[^a-z0-9]+")
+NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # the Agent Skills name rule
 MAX_NAME_CHARS = 64
 MAX_DESCRIPTION_CHARS = 1024  # the Agent Skills limit
-MAX_LIST_DESCRIPTION_CHARS = 200  # what the per-turn Skill list shows: the first sentence, cut to this
-MAX_BODY_LINES = 500  # recommended by the Agent Skills spec; a warning only
-MAX_FILES = 1000
-MAX_TOTAL_BYTES = 50 * 1024 * 1024
-MAX_BUNDLE_SKILLS = 40
-SKIPPED_DIRS = {".git", "node_modules"}
-LFS_POINTER = b"version https://git-lfs.github.com/spec/v1"
-LENIENT_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(?:|(.*?)\r?\n)---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
-TOP_LEVEL_KEY = re.compile(r"^([A-Za-z_][\w.-]*)[ \t]*:(?:[ \t]+(.*))?$")
-BLOCK_SCALAR = re.compile(r"^[|>][+-]?$")
-SENTENCE_END = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])")
-BIN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+LIST_DESCRIPTION_CHARS = 200  # about what Cubbie's Skill list shows of a description
+MAX_BODY_LINES = 500  # recommended by the Agent Skills spec
+LARGE_FILE_BYTES = 10 * 1024 * 1024
+LARGE_REPOSITORY_BYTES = 100 * 1024 * 1024
+LARGE_REPOSITORY_FILES = 10_000
+SKIPPED_DIRS = {".git", "node_modules"}  # never searched for Skills
+FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(?:|(.*?)\r?\n)---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 SPEC_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
 PACKAGE_PATH = re.compile(r"(?<![\w./-])(?:scripts|references|assets)/[A-Za-z0-9._/-]*[A-Za-z0-9_]")
-# Install commands in your text: shown to the student in the install summary; Cubbie runs them after they agree.
-INSTALL_LINE = re.compile(
-    r"\b(?:pip3?|uv\s+pip|uv\s+tool|pipx|npm|pnpm|yarn|bun|brew|apt-get|apt|go|cargo|gem)\s+(?:install|add|i)\b"
-    r"|\bnpx\s+(?:-y\s+)?@?[\w./-]+|\|\s*(?:ba)?sh\b", re.IGNORECASE)
-# Keys: the variable names a student can save in Cubbie, and how your files read them.
-KEY_NAME = re.compile(r"^(?:VAULT_[A-Z0-9_]+|[A-Z][A-Z0-9_]*_(?:API_KEY|TOKEN|SECRET|CLIENT_ID|USERNAME|PASSWORD|EMAIL|PHONE))$")
-TEXT_NAME = re.compile(
-    r"""\$\{?([A-Z][A-Z0-9_]*)"""
-    r"""|environ(?:\.get)?\s*[\[(]\s*['"]([A-Z][A-Z0-9_]*)"""
-    r"""|getenv\s*\(\s*['"]([A-Z][A-Z0-9_]*)"""
-    r"""|process\.env(?:\.([A-Z][A-Z0-9_]*)|\[\s*['"]([A-Z][A-Z0-9_]*))""")
+MIB = 1024 * 1024
 
 
 class SkillError(ValueError):
-    """A reason Cubbie refuses to install the folder, worded like Cubbie's reply."""
+    """Why a folder is not a Skill."""
 
 
 # ---------------------------------------------------------------- files
@@ -108,148 +82,59 @@ def _skipped(path: str) -> bool:
     return bool(SKIPPED_DIRS & set(path.split("/")[:-1]))
 
 
-def _regular(path: Path) -> bool:
-    return stat.S_ISREG(os.lstat(path).st_mode) if os.path.lexists(path) else False
-
-
-def repository(folder: Path) -> tuple[Path, str]:
-    """The root a link's target must stay inside (the git repository, else the folder) and the folder's path in it."""
-    top = _git(folder, "rev-parse", "--show-toplevel")
-    root = Path(top.strip()).resolve() if top else folder
-    inside = folder.relative_to(root).as_posix()
-    return root, "" if inside == "." else inside
-
-
-def lfs_files(folder: Path, paths: list[str]) -> set[str]:
-    """Paths stored through Git LFS: Cubbie fetches without LFS, so it gets their pointer files."""
+def _size(path: Path) -> int:
     try:
-        listed = subprocess.run(["git", "-C", str(folder), "check-attr", "-z", "--stdin", "filter"], input="".join(path + "\0" for path in paths),
-                                capture_output=True, check=True, text=True).stdout.split("\0")
-    except (OSError, subprocess.CalledProcessError):
-        return set()
-    return {path for path, _, value in zip(listed[0::3], listed[1::3], listed[2::3]) if value == "lfs"}
+        return os.lstat(path).st_size
+    except OSError:
+        return 0
 
 
-def read_files(folder: Path, paths: list[str]) -> tuple[dict[str, bytes], list[str]]:
-    """Read the folder the way Cubbie's installer reads a fetched repository, and what it changes or leaves out.
+@functools.lru_cache(maxsize=None)
+def repository_size(root: Path) -> tuple:
+    """(files, bytes) of what a clone of the repository at `root` checks out."""
+    paths = folder_files(root)
+    return len(paths), sum(_size(root / path) for path in paths)
 
-    A symbolic link to a file elsewhere in the repository is installed as a copy of it; links that leave
-    the repository, point at folders, links or nothing are left out, and so are git submodules. .git and
-    node_modules are not copied. A folder over MAX_FILES files or MAX_TOTAL_BYTES is refused.
-    """
-    root, where = repository(folder)
-    entries = []
+
+def outside_links(folder: Path, paths: list) -> list:
+    """Links that break when the Skill folder is copied on its own: absolute, leaving the folder, or pointing at nothing."""
+    notes = []
     for path in paths:
-        relative = posixpath.normpath(path)
-        if relative.startswith("../") or relative == ".." or relative.startswith("/"):
-            raise SkillError("The Skill contains a path outside its folder.")
-        if os.path.islink(folder / path) or not os.path.isdir(folder / path):
-            entries.append((relative, os.lstat(folder / path).st_size))
-    # Fetching checks every file and link in the folder first, node_modules included.
-    if len(entries) > MAX_FILES or sum(size for _, size in entries) > MAX_TOTAL_BYTES:
-        raise SkillError(f"{where or 'The Skill'} has {len(entries)} files and {sum(size for _, size in entries) // 1048576} MiB; "
-                         f"a Skill can have at most {MAX_FILES} files and {MAX_TOTAL_BYTES // 1048576} MiB.")
-    files: dict[str, bytes] = {}
-    notes: list[str] = []
-    published = None
-    stored_in_lfs = lfs_files(folder, [path for path, _ in entries])
-    for inside, _ in entries:
-        if _skipped(inside):
+        source = folder / path
+        if not os.path.islink(source):
             continue
-        source = folder / inside
-        if os.path.islink(source):
-            link = os.readlink(source)
-            target = posixpath.normpath(posixpath.join(posixpath.dirname(posixpath.join(where, inside)), link))
-            if published is None:
-                published = set(folder_files(root))
-            if (link.startswith("/") or target == ".." or target.startswith("../") or target not in published
-                    or _skipped(target) or not _regular(root / target)):
-                notes.append(f"{inside} is a link to {link}, which is not a file in the repository; it was left out.")
-                continue
-            notes.append(f"{inside} is a link to {link}; it is installed as a copy.")
-            data, stored = (root / target).read_bytes(), target in lfs_files(root, [target])
-        elif stat.S_ISREG(os.lstat(source).st_mode):
-            data, stored = source.read_bytes(), inside in stored_in_lfs
-        else:
-            continue
-        if stored or data.startswith(LFS_POINTER):
-            notes.append(f"{inside} is a Git LFS pointer; the large file itself is not included.")
-        files[inside] = data
-    if len(files) > MAX_FILES or sum(map(len, files.values())) > MAX_TOTAL_BYTES:
-        raise SkillError(f"A Skill can have at most {MAX_FILES} files and {MAX_TOTAL_BYTES // 1048576} MiB in total.")
-    if "SKILL.md" not in files:
-        raise SkillError("No SKILL.md was found at the linked folder.")
-    for line in (_git(folder, "ls-files", "-s", "-z", "--", ".") or "").split("\0"):
-        meta, _, path = line.partition("\t")
-        if meta.startswith("160000 "):  # a submodule's files are never part of the repository's commit
-            path = posixpath.join(where, path)
-            notes.append(f"{path} is a git submodule; its files are not included.")
-    return files, notes
+        link = os.readlink(source)
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(path), link))
+        if link.startswith("/") or target == ".." or target.startswith("../") or not os.path.exists(source):
+            notes.append(f"{path} is a link to {link}, outside the Skill folder or to nothing; a copy of the folder "
+                         "won't have that file. Put the file itself in the folder.")
+    return notes
 
 
 # ---------------------------------------------------------------- SKILL.md
 
 
-def skill_name(value: str) -> str:
-    """A path-safe Skill name: lowercase ASCII letters, digits and single hyphens, at most 64 characters."""
-    text = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
-    return NOT_NAME.sub("-", text).strip("-")[:MAX_NAME_CHARS].rstrip("-")
-
-
-def unique_name(name: str, taken) -> str:
-    if name not in taken:
-        return name
-    for number in itertools.count(2):
-        suffix = f"-{number}"
-        candidate = name[:MAX_NAME_CHARS - len(suffix)].rstrip("-") + suffix
-        if candidate not in taken:
-            return candidate
-
-
-def _text(value) -> str:
-    return "" if value is None or isinstance(value, (dict, list)) else str(value).strip()
-
-
-def _lenient(block: str) -> dict:
-    """Top-level `key: value` lines of frontmatter YAML rejects; indented lines continue the value above."""
-    data, key = {}, None
-    for line in block.splitlines():
-        match = TOP_LEVEL_KEY.match(line)
-        if match:
-            key, value = match.group(1), (match.group(2) or "").strip()
-            if value and not BLOCK_SCALAR.match(value):
-                data[key] = value[1:-1] if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'" else value
-            elif value or key in ("name", "description"):
-                data[key] = ""
-            else:
-                key = None
-        elif key is not None and line[:1] in (" ", "\t"):
-            data[key] = f"{data[key]} {line.strip()}".strip()
-        elif line.strip():
-            key = None
-    return data
-
-
-def read_skill_md(files: dict) -> tuple[str, dict, str, bool]:
-    """(SKILL.md text, frontmatter, body, read line by line)."""
+def read_skill_md(folder: Path) -> tuple:
+    """(SKILL.md text, frontmatter or None, body, problem with the frontmatter or None)."""
+    if not (folder / "SKILL.md").is_file():
+        raise SkillError("No SKILL.md in this folder.")
     try:
-        text = files["SKILL.md"].decode("utf-8")
-    except KeyError:
-        raise SkillError("No SKILL.md was found at the linked folder.") from None
+        text = (folder / "SKILL.md").read_bytes().decode("utf-8")
     except UnicodeDecodeError:
-        raise SkillError("SKILL.md must be UTF-8 text.") from None
+        raise SkillError("SKILL.md is not UTF-8 text.") from None
     content = text.removeprefix("\ufeff")
-    match = LENIENT_FRONTMATTER.match(content)
+    match = FRONTMATTER.match(content)
     if not match:
-        return text, {}, content, False
+        return text, None, content, "missing"
     block, body = match.group(1) or "", content[match.end():]
     try:
         data = yaml.safe_load(block) if block.strip() else {}
-    except yaml.YAMLError:
-        data = None
-    if isinstance(data, dict):
-        return text, data, body, False
-    return text, _lenient(block), body, True
+    except yaml.YAMLError as exc:
+        problem = str(getattr(exc, "problem", "") or "").strip()
+        return text, None, body, problem or "not valid YAML"
+    if not isinstance(data, dict):
+        return text, None, body, "not a list of fields"
+    return text, data, body, None
 
 
 def first_paragraph(body: str) -> str:
@@ -269,185 +154,100 @@ def first_paragraph(body: str) -> str:
     return " ".join(lines) or heading
 
 
-def required_commands(frontmatter: dict) -> list:
-    metadata = frontmatter.get("metadata")
-    if not isinstance(metadata, dict):
-        return []
-    found = []
-    for scope in (metadata, *(value for value in metadata.values() if isinstance(value, dict))):
-        requires = scope.get("requires")
-        bins = requires.get("bins") if isinstance(requires, dict) else None
-        if isinstance(bins, list):
-            found += [str(item).strip() for item in bins if BIN_NAME.match(str(item).strip())]
-    return list(dict.fromkeys(found))[:10]
+def _text(value) -> str:
+    return "" if value is None or isinstance(value, (dict, list)) else str(value).strip()
 
 
-def texts(files: dict) -> list:
-    found = []
-    for data in files.values():
-        try:
-            found.append(data.decode("utf-8"))
-        except UnicodeDecodeError:
-            continue
-    return found
+# ---------------------------------------------------------------- checks
 
 
-def install_lines(all_texts) -> list:
-    lines = []
-    for text in all_texts:
-        for raw in text.splitlines():
-            line = raw.strip().strip("`").removeprefix("$ ").strip()
-            if line and INSTALL_LINE.search(line) and line not in lines:
-                lines.append(line[:200])
-    return lines[:12]
-
-
-def key_names(all_texts) -> list:
-    found = []
-    for text in all_texts:
-        for match in TEXT_NAME.finditer(text):
-            name = next(group for group in match.groups() if group)
-            if KEY_NAME.match(name) and name not in found:
-                found.append(name)
-    return found[:20]
-
-
-def list_description(description: str) -> str:
-    first = SENTENCE_END.split(description.strip(), maxsplit=1)[0].strip()
-    return first if len(first) <= MAX_LIST_DESCRIPTION_CHARS else first[:MAX_LIST_DESCRIPTION_CHARS - 1].rstrip() + "…"
-
-
-def name_skills(folders: dict, *, fallback_names=(), reserved_names=BUILTIN_SKILL_NAMES) -> dict:
-    """The name Cubbie installs each folder of one link under (subpath -> name), and why it changed."""
-    wanted, declared = {}, {}
-    for path, files in folders.items():
-        _, frontmatter, _, _ = read_skill_md(files)
-        declared[path] = _text(frontmatter.get("name"))
-        candidates = (declared[path], posixpath.basename(path), *fallback_names)
-        wanted[path] = declared[path] if NAME_PATTERN.match(declared[path]) else next(filter(None, map(skill_name, candidates)), "skill")
-    names = {}
-    for path, name in wanted.items():
-        if name not in reserved_names and name not in names.values():
-            names[path] = name
-    taken = set(reserved_names) | set(names.values())
-    for path, name in wanted.items():
-        if path not in names:
-            names[path] = unique_name(name, taken)
-            taken.add(names[path])
-    fixes = {}
-    for path, name in names.items():
-        if name == declared[path]:
-            fixes[path] = None
-        elif not declared[path]:
-            fixes[path] = f"SKILL.md gives no name, so it is named {name!r}."
-        else:
-            reason = ("Skill names use lowercase letters, digits and hyphens" if name == wanted[path] else
-                      f"{wanted[path]!r} is a built-in Cubbie Skill" if wanted[path] in reserved_names else
-                      f"another Skill from this link is named {wanted[path]!r}")
-            fixes[path] = f"SKILL.md names it {declared[path]!r}; installed as {name!r} because {reason}."
-    return {path: (names[path], fixes[path]) for path in folders}
-
-
-def read_package(files: dict, name: str, name_fix=None) -> dict:
-    text, frontmatter, body, lenient = read_skill_md(files)
-    fixes = ["SKILL.md frontmatter is not valid YAML, so its fields were read line by line."] if lenient else []
-    fixes += [name_fix] if name_fix else []
-    description = _text(frontmatter.get("description"))
-    if not description:
-        description = first_paragraph(body)
-        if not description:
-            raise SkillError("SKILL.md has no description and no instructions to take one from.")
-        fixes.append("SKILL.md gives no description, so its first paragraph is used.")
+def check_skill(folder: Path, shown: str) -> dict:
+    """Check one Skill folder: FAIL only without a readable SKILL.md, warnings for the rest."""
+    if not folder.is_dir():
+        return {"folder": shown, "ok": False, "error": "Not a folder."}
+    try:
+        text, frontmatter, body, problem = read_skill_md(folder)
+    except SkillError as exc:
+        return {"folder": shown, "ok": False, "error": str(exc)}
+    paths = folder_files(folder)
+    notes = []
+    if problem == "missing":
+        notes.append("SKILL.md has no frontmatter (a block between --- lines at the top with name and description); "
+                     "Cubbie lists the Skill by its folder name and first paragraph instead.")
+    elif problem:
+        notes.append(f"SKILL.md frontmatter can't be read as YAML ({problem}); Cubbie and other agents may not see its "
+                     "name and description. Quote values that contain a colon.")
+    fields = frontmatter or {}
+    name, description = _text(fields.get("name")), _text(fields.get("description"))
+    if frontmatter is not None and not name:
+        notes.append(f"SKILL.md gives no name; Cubbie lists the Skill as {folder.name!r}, its folder name.")
+    if name and (len(name) > MAX_NAME_CHARS or not NAME_PATTERN.match(name)):
+        notes.append(f"The name {name!r} isn't lowercase letters, digits and single hyphens (at most {MAX_NAME_CHARS} "
+                     "characters), as the Agent Skills format asks; other agents may reject it.")
+    listed = description or first_paragraph(body)
+    if frontmatter is not None and not description:
+        notes.append("SKILL.md gives no description; Cubbie uses its first paragraph instead. "
+                     "Write one that says what the Skill does and when to use it." if listed else
+                     "SKILL.md gives no description and has no paragraph to take one from; "
+                     "write one that says what the Skill does and when to use it.")
     if len(description) > MAX_DESCRIPTION_CHARS:
-        description = description[:MAX_DESCRIPTION_CHARS - 1].rstrip() + "…"
-        fixes.append(f"The description was shortened to {MAX_DESCRIPTION_CHARS} characters.")
-    hashes = {path: hashlib.sha256(raw).hexdigest() for path, raw in sorted(files.items())}
-    digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    markdown = texts({path: data for path, data in files.items() if path.endswith(".md")})
-    return {"name": name, "description": description, "listed_as": list_description(description), "frontmatter": frontmatter,
-            "skill_md": text, "fixes": fixes, "package_sha256": digest, "commands": required_commands(frontmatter),
-            "install_lines": install_lines(markdown), "env": key_names(texts(files))}
-
-
-# ---------------------------------------------------------------- report
-
-
-def warnings_for(package: dict, files: dict, folder: Path, changes=()) -> list:
-    notes = [f"Cubbie would fix this on install: {fix}" for fix in [*package["fixes"], *changes]]
-    lines = len(package["skill_md"].splitlines())
-    if lines > MAX_BODY_LINES:
-        notes.append(f"SKILL.md has {lines} lines; the Agent Skills spec recommends under {MAX_BODY_LINES}. Move details into other files.")
-    if "cubbie.yaml" in files:
-        notes.append("cubbie.yaml is no longer read: write install commands, keys and logins in SKILL.md instead.")
-    for path in sorted(set(PACKAGE_PATH.findall(package["skill_md"]))):
-        if path not in files and not any(name.startswith(path + "/") for name in files):
-            notes.append(f"SKILL.md refers to {path}, which is not in the folder.")
-    if _git(folder, "status", "--porcelain", "--", "."):
-        notes.append("There are uncommitted changes; Cubbie installs the pushed commit, not your working copy.")
-    # Portability hints: Cubbie accepts these, other Agent Skills clients may not.
-    name = package["name"]
-    if name.endswith("-") or "--" in name:
-        notes.append("The Agent Skills spec does not allow a trailing hyphen or '--' in name; other agents may reject it.")
-    extra = sorted(str(key) for key in package["frontmatter"] if key not in SPEC_FIELDS)
+        notes.append(f"The description has {len(description)} characters; the Agent Skills format allows "
+                     f"{MAX_DESCRIPTION_CHARS}, and Cubbie's Skill list shows about the first {LIST_DESCRIPTION_CHARS}.")
+    elif len(description) > LIST_DESCRIPTION_CHARS:
+        notes.append(f"The description has {len(description)} characters; Cubbie's Skill list shows about the first "
+                     f"{LIST_DESCRIPTION_CHARS}, so say what the Skill does and when to use it within them.")
+    extra = sorted(str(key) for key in fields if key not in SPEC_FIELDS)
     if extra:
-        notes.append(f"Frontmatter field(s) {', '.join(extra)} are not in the Agent Skills spec; other agents may reject them.")
-    return notes
+        notes.append(f"Frontmatter field(s) {', '.join(extra)} are not in the Agent Skills format; other agents may reject them.")
+    lines = len(text.splitlines())
+    if lines > MAX_BODY_LINES:
+        notes.append(f"SKILL.md has {lines} lines; the Agent Skills format recommends under {MAX_BODY_LINES}. "
+                     "Move details into other files.")
+    if "cubbie.yaml" in paths:
+        notes.append("cubbie.yaml is not needed and Cubbie ignores it; write setup commands, keys and sign-in steps in SKILL.md.")
+    for path in sorted(set(PACKAGE_PATH.findall(text))):
+        if path not in paths and not any(name.startswith(path + "/") for name in paths):
+            notes.append(f"SKILL.md refers to {path}, which is not in the folder.")
+    notes += outside_links(folder, paths)
+    sizes = {path: _size(folder / path) for path in paths}
+    large = sorted((path for path, size in sizes.items() if size > LARGE_FILE_BYTES), key=lambda path: -sizes[path])
+    for path in large[:5]:
+        notes.append(f"{path} is {sizes[path] / MIB:.0f} MiB; large files make the Skill slow to fetch.")
+    top = _git(folder, "rev-parse", "--show-toplevel")
+    count, total = repository_size(Path(top.strip()).resolve()) if top else (len(sizes), sum(sizes.values()))
+    if count > LARGE_REPOSITORY_FILES or total > LARGE_REPOSITORY_BYTES:
+        notes.append(f"The repository has {count:,} files and {total / MIB:.0f} MiB; Cubbie clones all of it, so it will "
+                     "be slow to install. A repository with just the Skill installs faster.")
+    if _git(folder, "status", "--porcelain", "--", "."):
+        notes.append("There are uncommitted changes; Cubbie fetches the pushed commit, not your working copy.")
+    return {"folder": shown, "ok": True, "name": name or folder.name, "description": listed,
+            "files": len(sizes), "bytes": sum(sizes.values()), "warnings": notes}
 
 
 def expand(folder: Path) -> tuple:
-    """The Skill folders a link to `folder` installs: itself when it has SKILL.md, else every folder inside it
-    that has one, however deep, the outermost where Skills nest; .git and node_modules are not searched. At most 40."""
-    if not folder.is_dir() or _regular(folder / "SKILL.md"):
+    """The Skill folders inside `folder`: itself when it has SKILL.md, else every folder inside it that has one,
+    however deep, the outermost where Skills nest; .git and node_modules are not searched."""
+    if not folder.is_dir() or (folder / "SKILL.md").is_file():
         return [folder], None
     root = folder.resolve()
     found = sorted({posixpath.dirname(path) for path in folder_files(root)
-                    if posixpath.basename(path) == "SKILL.md" and not _skipped(path) and _regular(root / path)},
+                    if posixpath.basename(path) == "SKILL.md" and not _skipped(path) and (root / path).is_file()},
                    key=lambda path: (path.count("/"), path))
     outer = []
     for path in found:
         if not any(path.startswith(parent + "/") for parent in outer):
             outer.append(path)
-    if len(outer) > MAX_BUNDLE_SKILLS:
-        return [], (f"The link holds {len(outer)} Skills; at most {MAX_BUNDLE_SKILLS} can be installed from one link. "
-                    "Send a link to a folder with fewer.")
     if not outer:
-        return [], "No SKILL.md was found at the linked folder or in the folders inside it."
+        return [], "No SKILL.md in this folder or the folders inside it."
     return [folder / path for path in sorted(outer)], None
 
 
-def check_all(folder: Path, reserved_names: frozenset = BUILTIN_SKILL_NAMES) -> list:
-    """Check a Skill folder, or every Skill a link to a folder of Skills would install together."""
+def check_all(folder: Path) -> list:
+    """Check a Skill folder, or every Skill in a folder of Skills."""
     skills, error = expand(folder)
     if error:
         return [{"folder": str(folder), "ok": False, "error": error}]
-    results, readable, changes = {}, {}, {}
-    for skill in skills:
-        shown, resolved = str(skill), skill.resolve()
-        if not resolved.is_dir():
-            results[shown] = {"folder": shown, "ok": False, "error": "Not a folder."}
-            continue
-        try:
-            files, changes[shown] = read_files(resolved, folder_files(resolved))
-            readable[shown] = (resolved, files)
-            read_skill_md(files)
-        except SkillError as exc:
-            results[shown] = {"folder": shown, "ok": False, "error": str(exc)}
-            readable.pop(shown, None)
-    named = name_skills({shown: files for shown, (_, files) in readable.items()},
-                        fallback_names=(Path(folder).resolve().name,), reserved_names=reserved_names)
-    for shown, (resolved, files) in readable.items():
-        name, fix = named[shown]
-        try:
-            package = read_package(files, name, fix)
-        except SkillError as exc:
-            results[shown] = {"folder": shown, "ok": False, "error": str(exc)}
-            continue
-        results[shown] = {"folder": shown, "ok": True, "name": package["name"], "description": package["description"],
-                          "listed_as": package["listed_as"], "files": len(files), "bytes": sum(len(data) for data in files.values()),
-                          "package_sha256": package["package_sha256"], "commands": package["commands"],
-                          "install_lines": package["install_lines"], "env": package["env"],
-                          "warnings": warnings_for(package, files, resolved, changes[shown])}
-    return [results[str(skill)] for skill in skills]
+    return [check_skill(skill.resolve(), str(skill)) for skill in skills]
 
 
 def render(result: dict) -> str:
@@ -455,11 +255,7 @@ def render(result: dict) -> str:
         return f"FAIL {result['folder']}\n  {result['error']}"
     rows = [
         ("description", result["description"]),
-        ("in the list", result["listed_as"] if result["listed_as"] != result["description"] else ""),
         ("files", f"{result['files']} file{'s' * (result['files'] != 1)}, {result['bytes']:,} bytes"),
-        ("commands", ", ".join(result["commands"])),
-        ("install", " | ".join(result["install_lines"])),
-        ("keys (env)", ", ".join(result["env"])),
     ]
     lines = [f"OK   {result['name']}  {result['folder']}"]
     lines += [f"  {label + ':':15}{value}" for label, value in rows if value]
@@ -468,7 +264,7 @@ def render(result: dict) -> str:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Check Skill folders against Cubbie's install rules before pushing them.")
+    parser = argparse.ArgumentParser(description="Check Skill folders against the Agent Skills format before pushing them.")
     parser.add_argument("folders", nargs="+", type=Path, help="Skill folders, or a folder of Skills")
     parser.add_argument("--json", action="store_true", help="print one JSON object per folder")
     args = parser.parse_args(argv)

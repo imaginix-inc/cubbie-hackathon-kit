@@ -1,6 +1,6 @@
 ---
 name: netlify-publish
-description: Publishes a folder of web pages (HTML, CSS, JavaScript) to the student's own Netlify account and sends back the public link. Use when the student wants to put a web page, portfolio or class project online, or update a site they published before.
+description: Publishes a folder of web pages to the student's own Netlify account and sends back the link. Use when the student wants to put a web page, portfolio or class project online, or update their site.
 ---
 
 # Netlify Publish

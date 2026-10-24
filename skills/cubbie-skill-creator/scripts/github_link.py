@@ -3,16 +3,16 @@
 # requires-python = ">=3.9"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Print the link a student texts to Cubbie to install a Skill, pinned to the pushed commit.
+"""Print the links a student texts to Cubbie to install a Skill: the branch, and the pushed commit.
 
     python3 scripts/github_link.py <skill-folder>            # asks the git host too
     python3 scripts/github_link.py <skill-folder> --offline  # local git checks only
 
-The folder (one Skill, or a folder of Skills that one link installs together) must be committed
-and pushed. Cubbie fetches links with git over HTTPS from any host (as of 2026-10-24); GitHub, Gitee
-and GitLab links can name a folder and a branch, tag or commit, other hosts only the repository.
-The script runs the Cubbie checks from validate_cubbie_skill.py, then lists the repository with git
-without a sign-in, as anyone installing the link would. It never pushes or changes anything.
+The folder (one Skill, or a folder of Skills) must be committed and pushed. Cubbie fetches a link
+with ordinary commands such as `git clone`, so any git host works; GitHub, Gitee and GitLab links can
+name a folder and a branch or commit, other hosts' links name only the repository. The script runs the
+checks from validate_cubbie_skill.py, then lists the repository with git without a sign-in, as a fresh
+clone on Cubbie's computer would. It never pushes or changes anything.
 """
 
 from __future__ import annotations
@@ -27,8 +27,6 @@ import sys
 from pathlib import Path
 from urllib.parse import quote
 
-# Repository path segments Cubbie accepts in a link (app/skills/source.py).
-SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 REMOTE = re.compile(r"^(?:(?:https|ssh)://(?:[^@/]+@)?(?P<host>[^/:]+)(?::\d+)?/|(?:[^@/]+@)?(?P<scp>[^/:]+):)"
                     r"(?P<path>[^:]+?)(?:\.git)?/?$")
 
@@ -49,7 +47,7 @@ def git(folder: Path, *args: str) -> str | None:
 
 
 def remote_access(url: str) -> str:
-    """List the repository with git and no sign-in, as Cubbie does: "public", "sign-in", "not-found" or "unreachable"."""
+    """List the repository with git and no sign-in, as a fresh clone would: "public", "sign-in", "not-found" or "unreachable"."""
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="/bin/false")
     try:
         result = subprocess.run(["git", "-c", "credential.helper=", "ls-remote", "--heads", "--", url],
@@ -66,7 +64,7 @@ def remote_access(url: str) -> str:
 
 
 def web_link(host: str, project: str, ref: str | None, subpath: str) -> str | None:
-    """The link Cubbie reads as this ref and folder; None where the host's links name only the repository."""
+    """The web link to this ref and folder; None where the host's links name only the repository."""
     base = f"https://{host}/{project}"
     if not ref:
         return base
@@ -93,27 +91,24 @@ def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dic
     match = REMOTE.match(remote_url or "")
     host = (match["host"] or match["scp"]).lower().removeprefix("www.") if match else ""
     if "." not in host:
-        problems.append(f"The git remote {remote!r} is {remote_url or 'missing'}; Cubbie fetches from https://<host>/<repository>, "
+        problems.append(f"The git remote {remote!r} is {remote_url or 'missing'}; Cubbie clones from https://<host>/<repository>, "
                         "so push to a remote with a web address.")
         return result
     project = match["path"].strip("/")
-    for segment in project.split("/"):
-        if not SEGMENT.match(segment):
-            problems.append(f"{segment!r} cannot appear in a Cubbie install link; use letters, digits, '.', '_' and '-' only.")
     commit = git(folder, "rev-parse", "HEAD")
     if commit is None:
         problems.append("The repository has no commits yet; commit the Skill and push it.")
         return result
     if git(folder, "status", "--porcelain", "--", "."):
-        problems.append("The Skill folder has uncommitted changes; commit and push them first. Cubbie installs the pushed commit.")
+        problems.append("The Skill folder has uncommitted changes; commit and push them first. Cubbie fetches the pushed commit.")
     pushed = bool(git(folder, "branch", "-r", "--contains", commit))
     if not pushed:
         problems.append(f"Commit {commit[:12]} is not on any branch of the remote yet; push it first.")
 
     validator = _load_validator()
-    for checked in validator.check_all(folder):  # a folder of Skills: one link installs them together
+    for checked in validator.check_all(folder):  # a folder of Skills: one link holds them all
         if not checked["ok"]:
-            problems.append(f"Cubbie would refuse this: {checked['error']}")
+            problems.append(f"{checked['folder']}: {checked['error']}")
         notes.extend(note for note in checked.get("warnings", []) if not note.startswith("There are uncommitted changes"))
         if checked.get("name"):
             result.setdefault("skills", []).append(checked["name"])
@@ -122,8 +117,8 @@ def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dic
     if not offline and not problems:
         access = remote_access(url)
         if access == "sign-in":
-            notes.append(f"{url} needs a sign-in, so its link installs only for a student who signed in to git on Cubbie's "
-                         "computer (Cubbie can run gh auth login for them). Make the repository public so anyone can install it.")
+            notes.append(f"{url} needs a sign-in, so its link works only after the student signs in to git on Cubbie's "
+                         "computer. Make the repository public: the hackathon needs a public one, and anyone can install from it.")
         elif access == "not-found":
             problems.append(f"{url} was not found without a sign-in. Check the remote; if the repository is private, make it public.")
         elif access == "unreachable":
@@ -135,8 +130,8 @@ def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dic
     if branch and branch != "HEAD" and pinned:
         result["latest"] = web_link(host, project, branch, subpath)
     if not pinned:
-        notes.append(f"Links to {host} can name only the repository: Cubbie installs every Skill in it (up to 40) from the "
-                     "newest commit of its default branch. Use GitHub, Gitee or GitLab to link one folder or pin a commit.")
+        notes.append(f"Links to {host} name only the repository: Cubbie clones its default branch and looks for the Skill "
+                     "folders in it. Use GitHub, Gitee or GitLab to link one folder or pin a commit.")
     result["ok"] = not problems
     return result
 
@@ -145,7 +140,7 @@ def render(result: dict) -> str:
     lines = []
     if result["ok"]:
         if len(result.get("skills") or []) > 1:
-            lines.append(f"One link installs {len(result['skills'])} Skills together: {', '.join(result['skills'])}")
+            lines.append(f"This link holds {len(result['skills'])} Skills: {', '.join(result['skills'])}")
         if result["pinned"] == result["repository"]:
             lines += ["Repository link (installs the newest commit of the default branch):", f"  {result['pinned']}"]
         else:
@@ -162,7 +157,7 @@ def render(result: dict) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Print the Cubbie install link for a pushed Skill folder.")
+    parser = argparse.ArgumentParser(description="Print the Cubbie install links for a pushed Skill folder.")
     parser.add_argument("folder", type=Path,
                         help="the Skill folder, or a folder of Skills")
     parser.add_argument("--remote", default="origin", help="git remote Cubbie fetches from (default: origin)")

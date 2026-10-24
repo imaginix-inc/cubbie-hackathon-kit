@@ -34,4 +34,10 @@ Later the same day: links from any https git host, owner/repo, branches with "/"
 and full commits; Skills found at any depth; links to files in the repository copied;
 1000 files and 50 MiB per Skill (validate_cubbie_skill.py and github_link.py follow).
 
+Updated again on 2026-10-24, when Cubbie dropped its Skill installer: Cubbie fetches a
+link with ordinary commands and has no install summary or limits of its own.
+validate_cubbie_skill.py now checks the Agent Skills format (SKILL.md, name and
+description, with Cubbie hints as warnings), github_link.py no longer applies installer
+link rules, and the SKILL.md, README.md and references/cubbie-*.md text follows.
+
 All other files are unchanged from the source commit.

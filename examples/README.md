@@ -1,7 +1,8 @@
 # Example Cubbie Skills
 
 Three small, working Skills that show the three shapes a Cubbie Skill usually takes. Each is a plain
-Agent Skills folder (no extra files), passes `cubbie-skill-creator`'s checks and installs on Cubbie as it is.
+Agent Skills folder (a `SKILL.md`, plus scripts where needed), passes `cubbie-skill-creator`'s checks without
+warnings and installs on Cubbie as it is.
 
 | Skill | Shape | What it shows |
 | --- | --- | --- |
@@ -17,9 +18,11 @@ Text Cubbie the folder's link, for example:
 https://github.com/imaginix-inc/cubbie-hackathon-kit/tree/main/examples/canvas-deadline-nudge
 ```
 
-Cubbie replies with a summary (what the Skill does, the commit, the install commands it gives and the keys it
-reads) and asks before installing; reply "yes". The folder lands on your drive at `/user/skills/<name>/`. Then talk to it the way a student would ("what's due this week? remind me before
-each one"). "What Skills do I have?" lists your Skills, and "remove canvas-deadline-nudge" takes it off again.
-Installs are per student: installing a Skill adds it only for you.
+Cubbie tells you what it is about to fetch and asks first, since it is someone else's code; reply "yes". It
+fetches the repository with git, copies the folder to your drive at `/user/skills/<name>/`, and sets up what the
+Skill's `SKILL.md` asks for (a package, a key, a sign-in). Then talk to it the way a student would ("what's due
+this week? remind me before each one"). From your next message on, "What Skills do I have?" lists it. Text the link
+again to update a Skill, and ask "remove canvas-deadline-nudge" to delete its folder. Installs are per student:
+installing a Skill adds it only for you.
 
 Doing this once before you write your own Skill shows you exactly what your users will see.

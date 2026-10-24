@@ -32,7 +32,7 @@ start, or take care of that makes a student say "I need this"?
 
 How it works (from the site):
 - The organizers provide a Skills interface and full docs. (The `cubbie-skill-creator` skill in this kit carries
-  Cubbie's install rules and walks you through writing, checking and publishing a Skill.)
+  what Cubbie can do and how it installs a Skill, and walks you through writing, checking and publishing one.)
 - Write your Skill against it and submit it to Cubbie: Cubbie installs a Skill when a student texts it the Skill's
   GitHub link.
 - Cubbie runs it with its existing abilities; no app or backend to build.

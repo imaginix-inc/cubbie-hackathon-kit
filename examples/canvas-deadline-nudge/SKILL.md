@@ -1,6 +1,6 @@
 ---
 name: canvas-deadline-nudge
-description: Sets reminders before upcoming Canvas assignment deadlines. Use when the student asks what is due soon and wants to be reminded, says they keep missing due dates, or asks for reminders before every assignment in a course.
+description: Sets reminders before upcoming Canvas assignment deadlines. Use when the student asks what is due soon and wants reminders, says they keep missing due dates, or wants a nudge before every assignment.
 ---
 
 # Canvas Deadline Nudge

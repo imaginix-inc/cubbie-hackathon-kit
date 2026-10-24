@@ -24,7 +24,7 @@ Plain words keep the Skill readable in Claude Code and Codex too.
 | Documents and slides | Creates Word, PDF, Excel, Markdown, calendar (.ics) and HTML files, and slide decks | "Make a one-page PDF study guide and send it" | Produce a one-page resume or a study guide PDF |
 | Files and media | Reads photos, PDFs and documents the student sends; transcribes voice notes and videos | "Read the receipt photo the student sent" | Turn a photo of a whiteboard into clean notes |
 | Memory | Remembers facts and preferences about the student across conversations | "Remember the student's dietary needs", "use the budget the student set before" | Remember dietary needs or a budget and use them next time |
-| Secure input | Sends a private page to collect a password, API key, phone or email; the value never enters the chat | Automatic for a key `SKILL.md` names (see `cubbie-auth.md`); otherwise "collect the student's library card number through a secure page" | Collect a key your Skill needs |
+| Secure input | Sends a private page to collect a password, API key, phone or email; the value never enters the chat | Cubbie sends it for a key `SKILL.md` names that the student hasn't saved (see `cubbie-auth.md`); otherwise "collect the student's library card number through a secure page" | Collect a key your Skill needs |
 | Code sandbox | Runs Python and Node scripts in the student's private sandbox, with files that persist; a long command (a login, a build) can run in the background for up to an hour | "Run `python3 scripts/plan.py --course <id>`" | Run your Skill's own scripts and command-line tools |
 
 Cubbie also writes replies, follows up proactively within the student's notification settings, and asks before it
@@ -54,7 +54,7 @@ is, so texting one to Cubbie is the quickest way to see what students will see.
 
 ## Built-in Skills
 
-Cubbie ships two Skills of its own. Their names are reserved, and Cubbie already handles their requests:
+Cubbie ships two Skills of its own and already handles their requests, so give yours a different name:
 
 - `email-to-professor`: drafts formal emails to professors or TAs (absence, extension, office hours, grade questions); never sends without the student's yes.
 - `study-plan-builder`: builds or adjusts a day-by-day study or review plan from free time and deadlines.
@@ -66,21 +66,20 @@ say so in its description, so Cubbie can tell when to use it.
 
 | Supported | Not supported yet |
 | --- | --- |
-| Skills in the Agent Skills format, from any https git repository (private ones once the student signs in to git on Cubbie) or a `.zip`/`.tar.gz` link | MCP servers, remote or local |
-| Python and Node scripts; pip and npm packages; prebuilt binaries by URL with a SHA-256 | System packages (`apt`), install scripts (`curl \| sh`), git or URL dependencies |
+| Skills in the Agent Skills format, from a link to a git repository or a folder in one (a private one only after the student signs in to git on Cubbie's computer), a `.zip` link, or the install command a README gives (such as `npx skills add owner/repo -g`) | MCP servers, remote or local |
+| Python and Node scripts; Python packages in a virtual environment under HOME, global npm packages, other tools kept under HOME | System packages (`apt`) |
 | HTTPS (port 443) to any website | Plain HTTP, SSH, mail, other ports and databases; reaching a server you start from outside the sandbox |
 | Sign-in through Cubbie's browser, CLI login links and student API keys | "Sign in with ..." (OAuth) buttons for your own app; hosting your team's keys for all students |
 | Cubbie's abilities, called by Cubbie as your `SKILL.md` describes | Scripts calling Cubbie's abilities directly; Cubbie texting people other than its student |
 
-Packages: write pinned install commands in a Setup section of `SKILL.md`. Cubbie shows them (and the commands listed
-in `metadata.requires.bins`) in the install summary and runs them after the student agrees; global npm packages and
-anything under HOME survive restarts.
+Packages: write pinned install commands in a Setup section of `SKILL.md`. After installing the Skill, Cubbie reads
+`SKILL.md` and runs them with ordinary commands. Global npm packages (`npm install -g`) and anything under HOME
+survive restarts, so put Python packages in a virtual environment under `~/.local/share/venvs/<name>`.
 
-Limits per Skill: at most 1,000 files and 50 MiB; `.git` and `node_modules` folders are not copied. A symbolic link to
-a file elsewhere in the repository is installed as a copy; other links, git submodules and Git LFS files are left out.
-One link installs up to 40 Skills together (what it fetches must stay under 200 MiB compressed), and each keeps its
-own Setup commands. There is no limit on how many Skills a student installs: Cubbie lists the most used in full and
-finds the rest by name and description.
+Where Skills live: Cubbie lists the Skills it finds in `/user/skills/`, `~/.agents/skills/` and `~/.claude/skills/`
+(HOME is on the student's persistent drive), by their `name` and `description`. A Skill installed in a conversation
+is listed from the next message on. There are no limits on a Skill's files or size, or on how many Skills a student
+installs; a large repository just takes longer to clone.
 
 ## Scenario starting points
 
