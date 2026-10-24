@@ -78,18 +78,18 @@ are judged privately. Track 1 also unlocks Tracks 2 and 3.
    idea before anything is built if a check fails.
 2. **See a Skill work first** (five minutes, recommended for first-timers): have them text Cubbie the link of one
    of the kit's examples, such as
-   https://github.com/imaginix-inc/cubbie-hackathon-kit/tree/main/examples/canvas-deadline-nudge, reply "yes" and
-   try it. The examples' README explains the three shapes (instructions only, a script with a key, a CLI with a
-   sign-in). Cubbie itself: https://cubbie.ai. If the team can't get Cubbie running, they ask the organizers on
-   Discord; don't guess how access works.
+   https://github.com/imaginix-inc/cubbie-hackathon-kit/tree/main/examples/canvas-deadline-nudge. Cubbie says what it
+   is about to fetch and asks first; they reply "yes" and try it. The examples' README explains the three shapes
+   (instructions only, a script with a key, a CLI with a sign-in). Cubbie itself: https://cubbie.ai. If the team
+   can't get Cubbie running, they ask the organizers on Discord; don't guess how access works.
 3. **Build it with `cubbie-skill-creator`** (in this kit; in Codex, `$cubbie-skill-creator`). Hand over: the
    moment, the abilities and sign-in you settled on, that it's a Track 1 entry for the Cubbie Hackathon, and that
-   it has to end in a public GitHub repo. It interviews them, writes the Skill, checks it against Cubbie's install
-   rules, helps publish it, and prints two links (a branch link and a link pinned to the commit) plus a checklist
-   for testing on their own Cubbie. If that skill isn't installed, point them to the kit's README.
+   it has to end in a public GitHub repo. It interviews them, writes the Skill, checks the Skill folder, helps
+   publish it, and prints two links (a branch link and a link pinned to the commit) plus a checklist for testing on
+   their own Cubbie. If that skill isn't installed, point them to the kit's README.
 4. **Test on Cubbie.** They text the branch link to Cubbie and go through the checklist. After each fix: push,
-   text the branch link again (that installs the newest push), repeat. Track 1 is done when Cubbie installs the
-   Skill from its link and the main flow works on a real account.
+   text the branch link again (Cubbie fetches the newest push and replaces its copy), repeat. Track 1 is done when
+   Cubbie installs the Skill from its link and the main flow works on a real account.
 5. **Demo video.** A short public video showing the student moment and Cubbie handling it, posted on TikTok or
    Instagram (the only platforms the form accepts). Offer a shot list: the moment in the first seconds, the real
    iMessage exchange, the result. Length, hashtags or tags haven't been announced; don't make them up.
@@ -98,10 +98,10 @@ are judged privately. Track 1 also unlocks Tracks 2 and 3.
    editing while the window is open.
    Before a Track 1 submit, check the two boxes that matter most. **Passes checks**: if the Skill's folder is on
    this computer, run `python3 ../cubbie-skill-creator/scripts/validate_cubbie_skill.py <folder>` (needs PyYAML,
-   or use `uv run`); a `FAIL` is what Cubbie would reply when someone texts the link. **Works on our Cubbie**: ask
-   whether they texted the link to their own Cubbie and the main flow worked, since Track 1 asks for "a working
-   Skill running on Cubbie". If either isn't done, say so and suggest doing it first; it's their call, and
-   submitting early is allowed because they can edit while the window is open.
+   or use `uv run`); a `FAIL` means there is no readable `SKILL.md` to install, and `warning:` lines are worth a
+   look. **Works on our Cubbie**: ask whether they texted the link to their own Cubbie and the main flow worked,
+   since Track 1 asks for "a working Skill running on Cubbie". If either isn't done, say so and suggest doing it
+   first; it's their call, and submitting early is allowed because they can edit while the window is open.
 7. **Reach.** Votes need a school email and happen on the site; social views, likes, comments and shares are read
    automatically. More posts with the demo (up to 5 besides the main one) can be added with `posts` until voting
    closes.

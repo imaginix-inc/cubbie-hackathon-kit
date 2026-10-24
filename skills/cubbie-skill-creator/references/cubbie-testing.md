@@ -12,16 +12,16 @@ python3 <creator>/scripts/validate_cubbie_skill.py <skill-folder>
 `<creator>` is this skill-creator's folder. The script needs PyYAML (`pip install pyyaml`), or run it with
 `uv run <creator>/scripts/validate_cubbie_skill.py <skill-folder>`.
 
-- `FAIL` lines are what Cubbie would reply when a student sends the link; fix every one. A folder without
-  `SKILL.md` is checked the way a link to it installs: every folder inside it that has one, however deep
-  (`skills/<name>`, `.claude/skills/<name>`, `.agents/skills/<name>`, ...), the outermost where Skills nest, up to 40.
-- The validator follows Cubbie's installer as of 2026-10-24. If Cubbie replies with a reason the validator did not
-  report, trust Cubbie's reply.
-- It also prints what the student will see before agreeing: the install commands, the commands `SKILL.md` needs, the
-  keys your files read, and the one-line description the Skill list shows. Check each is what you meant.
-- `warning:` lines do not block the install, but read each one: names or descriptions Cubbie would repair, symbolic
-  links it installs as copies or leaves out, git submodules and Git LFS files it does not include, a leftover
-  `cubbie.yaml`, files the instructions mention that do not exist, uncommitted changes, and fields other agents may reject.
+- The checks follow the Agent Skills format. A Skill is any folder with a `SKILL.md`; Cubbie has no install rules of
+  its own (no `cubbie.yaml`, no limits on files, size or the number of Skills).
+- A `FAIL` means there is no readable `SKILL.md`, so there is no Skill to install; fix it. A folder without
+  `SKILL.md` is checked as a folder of Skills: every folder inside it that has one, however deep (`skills/<name>`,
+  `.claude/skills/<name>`, `.agents/skills/<name>`, ...), the outermost where Skills nest.
+- `warning:` lines don't block anything, but read each one: a missing name or description (Cubbie then lists the
+  Skill by its folder name and first paragraph), a description whose first sentence is longer than the 200 characters
+  Cubbie's Skill list shows, frontmatter that isn't valid YAML, a name or fields other agents may reject, a leftover `cubbie.yaml`
+  (not needed, ignored), files the instructions mention that don't exist, links to files outside the folder, very
+  large files or repositories (slow to clone), and uncommitted changes.
 - It does not install packages, run scripts or contact websites.
 
 ## 2. Scripts
@@ -44,13 +44,12 @@ Run each script the way `SKILL.md` tells Cubbie to, from the Skill folder:
 ## 3. Publish
 
 1. Put the Skill folder in a **public** GitHub repository, since the hackathon form asks for a GitHub link. Cubbie
-   itself fetches with git over HTTPS from any host (GitHub, GitLab, Gitee, others), and also takes `owner/repo` for
-   GitHub and links to `.zip` or `.tar.gz` files; a private repository installs only for a student who signed in to
-   git on Cubbie (for example with `gh auth login`). The Skill can be the repository root or any folder in it; name
-   the folder after the Skill. Several Skills can sit anywhere in one repository (`skills/<name>`,
-   `.claude/skills/<name>`, ...), and a link to a folder installs every Skill below it, up to 40. Only the Skill
-   folders are downloaded, so the rest of the repository can be any size; each Skill is at most 1,000 files and 50 MiB.
-2. Commit and push. Cubbie installs the pushed commit, never the working copy.
+   itself fetches with ordinary commands (`git clone`, then a copy of the Skill folder), so it takes a link to any git
+   repository, a folder inside one, or a `.zip` file. A private repository works only after the student signs in to
+   git on Cubbie's computer. The Skill can be the repository root or any folder in it; name the folder after the
+   Skill. Several Skills can sit anywhere in one repository (`skills/<name>`, `.claude/skills/<name>`, ...). Cubbie
+   usually clones the whole repository, so a small one installs faster.
+2. Commit and push. Cubbie fetches the pushed commit, never your working copy.
 3. Get the install link:
 
    ```bash
@@ -58,15 +57,15 @@ Run each script the way `SKILL.md` tells Cubbie to, from the Skill folder:
    ```
 
    It re-runs the structure checks, confirms the commit is pushed, and lists the repository with git without a
-   sign-in, as anyone installing the link would. Then it prints two links:
+   sign-in, as a fresh clone on Cubbie's computer would. Then it prints two links:
    - the **branch link** (`https://github.com/<owner>/<repo>/tree/<branch>/<folder>`; GitLab uses `/-/tree/`): test
-     with this one. Updating a Skill means texting its link again, and a branch link then installs the newest push.
-     Branch names with `/` work.
+     with this one. Updating a Skill means texting its link again; Cubbie then fetches the newest push and replaces
+     its copy. Branch names with `/` work.
    - the **pinned link** (`.../tree/<commit>/<folder>`): always that exact commit, so texting it again never picks
      up a fix. Share or submit it once the Skill works, and get a new one after each change.
 
-   Links to other hosts can name only the repository, so for those the script prints the repository link: it
-   installs every Skill in the repository from the newest commit of the default branch.
+   Links to other hosts can name only the repository, so for those the script prints the repository link: Cubbie
+   clones the newest commit of the default branch and looks for the Skill folders in it.
 
 Never push, create repositories or change visibility without the user's go-ahead; tell them the exact commands
 instead if they prefer to run them.
@@ -79,18 +78,18 @@ do not apply. Hand it to the user as a short numbered list they can follow on th
 
 | # | Text Cubbie | Expect |
 | --- | --- | --- |
-| 1 | The branch link | A summary with the Skill's description, the commit, the install commands and the keys it reads, then a question asking to install. Check that every command and key is expected. |
-| 2 | "yes", within 15 minutes (the plan expires) | Installed. Cubbie runs your Setup commands; if the Skill needs a key or login, a secure page or sign-in link arrives next. |
+| 1 | The branch link | Cubbie says what it is about to fetch (the repository and folder) and asks first, since it is third-party code. |
+| 2 | "yes" | Cubbie fetches the Skill and copies it to `/user/skills/<name>/` (or runs the install command your README gives), reads `SKILL.md` and runs your Setup commands. If the Skill needs a key or login, a secure page or sign-in link arrives next. |
 | 3 | (Key or login) | Open the secure page and save the key, or tap the sign-in link and approve. Nothing sensitive is typed into the chat. |
-| 4 | A realistic request that should trigger the Skill, phrased the way a student would ("<trigger phrase>") | The Skill's main flow runs and the reply follows its reply rules (short, plain text, links on their own line). |
+| 4 | In a new message, a realistic request that should trigger the Skill, phrased the way a student would ("<trigger phrase>") | The Skill's main flow runs and the reply follows its reply rules (short, plain text, links on their own line). A new Skill is listed from the next message on. |
 | 5 | A second phrasing of the same need, without the obvious keywords | The Skill still triggers. |
 | 6 | A near-miss request the Skill should not handle | Cubbie answers normally, without the Skill. |
 | 7 | A step that acts for the student (send, book, submit, pay) | Cubbie asks first and acts only after "yes"; payment is handed to the student. |
 | 8 | The failure case: account not connected, nothing matches, or a bad key | One clear line telling the student what to do. |
 | 9 | Accept a recurring check-in, if the Skill offers one | The schedule is created at the time the student chose; the first check-in arrives. |
 | 10 | Start a new conversation the next day and repeat step 4 | Saved settings, logins and keys are reused; nothing is asked twice. |
-| 11 | After pushing a fix: the branch link again ("update to this") | A new summary with the new commit, then a question; the fix works after "yes". |
-| 12 | "What Skills do I have?", then "remove <skill-name>" | The Skill is listed; Cubbie asks to confirm, then removes it (the folder stays in the trash for 7 days; saved keys, logins and installed tools are kept). |
+| 11 | After pushing a fix: the branch link again ("update to this") | Cubbie may ask again, then replaces its copy with the newest push (or pulls it); the fix works from the next message. |
+| 12 | "What Skills do I have?", then "remove <skill-name>" | The Skill is listed; Cubbie deletes its folder. Saved keys and the Skill's state under HOME (such as `~/.config/<name>/`) stay. |
 
 When something fails on Cubbie, fix it locally, rerun sections 1–3, then text the branch link again and repeat the rows
 that failed.
