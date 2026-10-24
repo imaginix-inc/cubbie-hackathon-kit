@@ -2,8 +2,8 @@
 """Say whether the student needs an umbrella or a jacket in the next few hours.
 
 Calls the free OpenWeather 5 day / 3 hour forecast API with the student's own key, which Cubbie
-injects as OPENWEATHER_API_KEY. The student's city and units are remembered in $SKILL_DATA_DIR,
-which survives sandbox restarts and Skill updates.
+passes as OPENWEATHER_API_KEY when the command names it. The student's city and units are remembered
+under HOME (~/.config/weather-before-class), which survives sandbox restarts and Skill updates.
 
 Exit codes: 0 ok, 2 bad arguments or no city, 3 key missing, 4 network error, 5 key rejected,
 6 unknown city, 7 other API error.
@@ -30,23 +30,22 @@ def fail(message: str, code: int):
     sys.exit(code)
 
 
-def settings_file() -> Path | None:
-    data_dir = os.environ.get("SKILL_DATA_DIR")
-    return Path(data_dir) / "settings.json" if data_dir else None
+def settings_file() -> Path:
+    # SKILL_DATA_DIR is where Skills installed before folders kept their data.
+    data_dir = os.environ.get("SKILL_DATA_DIR") or Path.home() / ".config" / "weather-before-class"
+    return Path(data_dir) / "settings.json"
 
 
 def load_settings() -> dict:
     path = settings_file()
     try:
-        return json.loads(path.read_text()) if path else {}
+        return json.loads(path.read_text())
     except (OSError, ValueError):
         return {}
 
 
 def save_settings(settings: dict) -> None:
     path = settings_file()
-    if path is None:
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings))
 
@@ -55,7 +54,7 @@ def fetch(city: str, units: str, steps: int) -> dict:
     key = os.environ.get("OPENWEATHER_API_KEY")
     if not key:
         fail("OPENWEATHER_API_KEY is not set. Ask the student to save their OpenWeather API key.", 3)
-    import requests  # installed by Cubbie from cubbie.yaml
+    import requests  # installed in the Skill's venv (SKILL.md, Setup)
 
     try:
         response = requests.get(API, params={"q": city, "appid": key, "units": units, "cnt": steps}, timeout=15)

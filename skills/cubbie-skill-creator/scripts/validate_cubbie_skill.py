@@ -8,12 +8,14 @@
     python3 scripts/validate_cubbie_skill.py <skill-folder>...    # needs PyYAML
     uv run scripts/validate_cubbie_skill.py <skill-folder>...     # installs PyYAML on the fly
 
-The checks follow Cubbie's installer as of 2026-10-23 (SKILL.md, folder name, built-in names,
-file limits, Markdown encoding, symbolic links, every cubbie.yaml rule, and package versions
-across a folder of Skills) and need nothing but PyYAML. A folder without SKILL.md is checked
+The checks follow Cubbie's installer as of 2026-10-24: a Skill is a plain folder installed as it is.
+Cubbie refuses only a folder without a readable SKILL.md (or with no description and no text to take
+one from), symbolic links, and folders over the file limits; it repairs the rest (a name that is not
+lowercase, missing or already taken; a missing description; frontmatter that is not valid YAML) and
+says so in the install summary. cubbie.yaml is no longer read. A folder without SKILL.md is checked
 the way a link to it installs: every Skill directly inside it, or inside its skills/ folder.
-Errors mean Cubbie will refuse the install. Warnings are local hints: Cubbie does not reject a
-Skill for them, but they usually point at something that breaks later or in other agents.
+The report also lists what the student sees before confirming: the install commands your files give,
+the commands SKILL.md says it needs, and the environment variables (keys) your files read.
 Nothing is installed or run, and no website is contacted.
 """
 
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import ipaddress
+import itertools
 import json
 import os
 import posixpath
@@ -29,6 +31,7 @@ import re
 import stat
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 try:
@@ -36,56 +39,41 @@ try:
 except ImportError:  # pragma: no cover - exercised by hand
     sys.exit("PyYAML is missing: run `pip install pyyaml`, or use `uv run scripts/validate_cubbie_skill.py`.")
 
-# Names of Skills built into Cubbie; a user Skill cannot reuse them.
+# Names of Skills built into Cubbie; a user Skill with one of them gets -2.
 BUILTIN_SKILL_NAMES = frozenset({"email-to-professor", "study-plan-builder"})
 
-MANIFEST = "cubbie.yaml"
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+NOT_NAME = re.compile(r"[^a-z0-9]+")
+MAX_NAME_CHARS = 64
 MAX_DESCRIPTION_CHARS = 1024  # the Agent Skills limit
+MAX_LIST_DESCRIPTION_CHARS = 200  # what the per-turn Skill list shows: the first sentence, cut to this
 MAX_BODY_LINES = 500  # recommended by the Agent Skills spec; a warning only
 MAX_FILES = 300
 MAX_TOTAL_BYTES = 10 * 1024 * 1024
 MAX_FILE_BYTES = 1024 * 1024
 MAX_BUNDLE_SKILLS = 40
-
-PIP_SPEC = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?==[A-Za-z0-9][A-Za-z0-9.+!_-]*$")
-NPM_SPEC = re.compile(r"^(@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*@\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$")
-ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+LENIENT_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n(?:|(.*?)\r?\n)---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+TOP_LEVEL_KEY = re.compile(r"^([A-Za-z_][\w.-]*)[ \t]*:(?:[ \t]+(.*))?$")
+BLOCK_SCALAR = re.compile(r"^[|>][+-]?$")
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])")
 BIN_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-SHA256 = re.compile(r"^[0-9a-f]{64}$")
-LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
-LOGIN_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
-RESERVED_ENV = {"PATH", "HOME", "PWD", "SHELL", "USER", "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
-                "NODE_PATH", "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
-                "REQUESTS_CA_BUNDLE", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "TMPDIR",
-                "LANG", "LC_ALL", "TZ", "MPLBACKEND", "SAL_USE_VCLPLUGIN"}
-RESERVED_ENV_PREFIXES = ("LD_", "DYLD_", "CUBBIE_", "SKILL_", "MODAL_", "BASH_", "NPM_CONFIG_", "PIP_")
-# Wildcards on these would cover anyone's subdomain; plain TLDs are rejected separately.
-SHARED_SUFFIXES = {"github.io", "githubusercontent.com", "vercel.app", "netlify.app", "pages.dev", "workers.dev",
-                   "herokuapp.com", "appspot.com", "web.app", "firebaseapp.com", "run.app", "cloudfunctions.net",
-                   "azurewebsites.net", "amazonaws.com", "cloudfront.net", "onrender.com", "fly.dev", "ngrok.io",
-                   "ngrok-free.app", "trycloudflare.com", "co.uk", "com.au", "com.cn", "co.jp", "com.br", "co.in"}
-MAX_DOMAINS = 10
-MAX_SECRETS = 5
-MAX_DEPENDENCIES = 20
-
-# Frontmatter fields defined by the Agent Skills specification (agentskills.io/specification).
 SPEC_FIELDS = {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
-INSTALL_COMMAND = re.compile(r"\b(?:pip3?|npm|pnpm|yarn|uv|apt-get|apt|brew)\s+(?:install|add|i)\b|\|\s*(?:ba)?sh\b")
 PACKAGE_PATH = re.compile(r"(?<![\w./-])(?:scripts|references|assets)/[A-Za-z0-9._/-]*[A-Za-z0-9_]")
-TRUE_WORDS = {"1", "on", "t", "true", "y", "yes"}
-FALSE_WORDS = {"0", "off", "f", "false", "n", "no"}
+# Install commands in your text: shown to the student in the install summary; Cubbie runs them after they agree.
+INSTALL_LINE = re.compile(
+    r"\b(?:pip3?|uv\s+pip|uv\s+tool|pipx|npm|pnpm|yarn|bun|brew|apt-get|apt|go|cargo|gem)\s+(?:install|add|i)\b"
+    r"|\bnpx\s+(?:-y\s+)?@?[\w./-]+|\|\s*(?:ba)?sh\b", re.IGNORECASE)
+# Keys: the variable names a student can save in Cubbie, and how your files read them.
+KEY_NAME = re.compile(r"^(?:VAULT_[A-Z0-9_]+|[A-Z][A-Z0-9_]*_(?:API_KEY|TOKEN|SECRET|CLIENT_ID|USERNAME|PASSWORD|EMAIL|PHONE))$")
+TEXT_NAME = re.compile(
+    r"""\$\{?([A-Z][A-Z0-9_]*)"""
+    r"""|environ(?:\.get)?\s*[\[(]\s*['"]([A-Z][A-Z0-9_]*)"""
+    r"""|getenv\s*\(\s*['"]([A-Z][A-Z0-9_]*)"""
+    r"""|process\.env(?:\.([A-Z][A-Z0-9_]*)|\[\s*['"]([A-Z][A-Z0-9_]*))""")
 
 
 class SkillError(ValueError):
     """A reason Cubbie refuses to install the folder, worded like Cubbie's reply."""
-
-
-class _Invalid(Exception):
-    def __init__(self, loc: tuple, message: str):
-        super().__init__(message)
-        self.loc, self.message = loc, message
 
 
 # ---------------------------------------------------------------- files
@@ -135,330 +123,198 @@ def read_files(folder: Path, paths: list[str]) -> dict[str, bytes]:
     return files
 
 
-# ---------------------------------------------------------------- cubbie.yaml
-
-
-def _string(value, loc, *, min_length=0, max_length=None) -> str:
-    if not isinstance(value, str):
-        raise _Invalid(loc, "Input should be a valid string")
-    if len(value) < min_length:
-        raise _Invalid(loc, f"String should have at least {min_length} character{'s' * (min_length != 1)}")
-    if max_length is not None and len(value) > max_length:
-        raise _Invalid(loc, f"String should have at most {max_length} characters")
-    return value
-
-
-def _integer(value, loc) -> int:
-    """Integers the way Cubbie's installer reads them: 1, 1.0, true, "1" and " 01 " all count as 1."""
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        try:
-            return int(text)
-        except ValueError:
-            try:
-                number = float(text)
-            except ValueError:
-                number = None
-            if number is not None and number.is_integer():
-                return int(number)
-    raise _Invalid(loc, "Input should be a valid integer")
-
-
-def _boolean(value, loc) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and value in (0, 1):
-        return bool(value)
-    if isinstance(value, str) and value.lower() in TRUE_WORDS | FALSE_WORDS:
-        return value.lower() in TRUE_WORDS
-    raise _Invalid(loc, "Input should be a valid boolean")
-
-
-class _Problems(Exception):
-    """Several problems found at once, so the report lists them together like Cubbie's does."""
-
-    def __init__(self, errors: list):
-        super().__init__(f"{len(errors)} problems")
-        self.errors = errors
-
-
-def _collect(loc, parse, value):
-    """Run a parser and return (result, errors) instead of stopping at the first problem."""
-    try:
-        return parse(value, loc), []
-    except _Invalid as exc:
-        return None, [exc]
-    except _Problems as group:
-        return None, group.errors
-
-
-def _model(value, loc, fields: dict, required: tuple = ()) -> dict:
-    """Check a mapping field by field; unknown keys are rejected so a typo never silently does nothing."""
-    if not isinstance(value, dict):
-        raise _Invalid(loc, "Input should be a valid dictionary")
-    errors = []
-    for key in value:
-        if not isinstance(key, str):
-            errors.append(_Invalid((*loc, key), "Keys should be strings"))
-        elif key not in fields:
-            errors.append(_Invalid((*loc, key), "Extra inputs are not permitted"))
-    parsed = {}
-    for key, (default, parse) in fields.items():
-        if key in value:
-            result, problems = _collect((*loc, key), parse, value[key])
-            errors.extend(problems)
-            parsed[key] = result
-        elif key in required:
-            errors.append(_Invalid((*loc, key), "Field required"))
-        else:
-            parsed[key] = default() if callable(default) else default
-    if errors:
-        raise _Problems(errors)
-    return parsed
-
-
-def _list(max_items, parse_item):
-    def parse(value, loc):
-        if not isinstance(value, list):
-            raise _Invalid(loc, "Input should be a valid list")
-        items, errors = [], []
-        for index, item in enumerate(value):
-            result, problems = _collect((*loc, index), parse_item, item)
-            items.append(result)
-            errors.extend(problems)
-        if errors:
-            raise _Problems(errors)
-        if len(items) > max_items:
-            raise _Invalid(loc, f"List should have at most {max_items} items after validation, not {len(items)}")
-        return items
-    return parse
-
-
-def _str_item(value, loc):
-    return _string(value, loc)
-
-
-def _checked(parse, check):
-    def run(value, loc):
-        return check(parse(value, loc), loc)
-    return run
-
-
-def _pinned(pattern, message):
-    def check(values, loc):
-        for value in values:
-            if not pattern.match(value):
-                raise _Invalid(loc, "Value error, " + message.format(value=value))
-        return values
-    return check
-
-
-def validate_domain(value: str) -> str:
-    host = str(value or "").strip().lower().rstrip(".")
-    wildcard = host.startswith("*.")
-    base = host[2:] if wildcard else host
-    if not base or len(base) > 253 or "/" in host or ":" in host:
-        raise ValueError(f"{value!r}: use a host name only, without scheme, port or path")
-    try:
-        ipaddress.ip_address(base)
-    except ValueError:
-        pass
-    else:
-        raise ValueError(f"{value!r}: IP addresses are not allowed")
-    labels = base.split(".")
-    if len(labels) < 2 or not all(LABEL.match(label) for label in labels) or labels[-1].isdigit():
-        raise ValueError(f"{value!r}: not a valid public host name")
-    if wildcard and base in SHARED_SUFFIXES:
-        raise ValueError(f"{value!r}: wildcards must stay inside one registered domain")
-    return host
-
-
-def _hosts(values, loc):
-    try:
-        return [validate_domain(value) for value in values]
-    except ValueError as exc:
-        raise _Invalid(loc, f"Value error, {exc}") from None
-
-
-def _download(value, loc):
-    def url(text, where):
-        text = _string(text, where, max_length=2048)
-        if not text.startswith("https://") or any(c.isspace() for c in text):
-            raise _Invalid(where, "Value error, download urls must be https:// links")
-        return text
-
-    def sha256(text, where):
-        text = _string(text, where)
-        if not SHA256.match(text.lower()):
-            raise _Invalid(where, "Value error, sha256 must be 64 hex characters")
-        return text.lower()
-
-    def binary(text, where):
-        text = _string(text, where)
-        if not BIN_NAME.match(text):
-            raise _Invalid(where, "Value error, bin must be a plain executable name")
-        return text
-
-    return _model(value, loc, {"url": (None, url), "sha256": (None, sha256), "bin": (None, binary)},
-                  required=("url", "sha256", "bin"))
-
-
-def _secret(value, loc):
-    def env(text, where):
-        text = _string(text, where)
-        if not ENV_NAME.match(text) or text in RESERVED_ENV or text.startswith(RESERVED_ENV_PREFIXES):
-            raise _Invalid(where, f"Value error, environment variable {text!r} is invalid or reserved")
-        return text
-
-    def help_url(text, where):
-        if text is None:
-            return None
-        text = _string(text, where, max_length=2048)
-        if not text.startswith("https://"):
-            raise _Invalid(where, "Value error, help_url must be an https:// link")
-        return text
-
-    return _model(value, loc, {
-        "env": (None, env),
-        "label": (None, lambda text, where: _string(text, where, min_length=1, max_length=120)),
-        "help_url": (None, help_url),
-        "required": (True, _boolean),
-    }, required=("env", "label"))
-
-
-def _login(value, loc):
-    def login_id(text, where):
-        text = _string(text, where)
-        if not LOGIN_ID.fullmatch(text):
-            raise _Invalid(where, "String should match pattern '^[a-z0-9][a-z0-9-]{0,31}$'")
-        return text
-
-    def status(text, where):
-        return None if text is None else _string(text, where, max_length=500)
-
-    return _model(value, loc, {
-        "id": (None, login_id),
-        "command": (None, lambda text, where: _string(text, where, min_length=1, max_length=500)),
-        "status": (None, status),
-    }, required=("id", "command"))
-
-
-def _unique_env(secrets, loc):
-    names = [secret["env"] for secret in secrets]
-    if len(names) != len(set(names)):
-        raise _Invalid(loc, "Value error, secret env names must be unique")
-    return secrets
-
-
-def _version(value, loc):
-    if _integer(value, loc) != 1:
-        raise _Invalid(loc, "Value error, cubbie must be 1")
-    return 1
-
-
-DEPENDENCIES = {
-    "pip": (list, _checked(_list(MAX_DEPENDENCIES, _str_item),
-                           _pinned(PIP_SPEC, "pip package {value!r} must be pinned as name==version"))),
-    "npm": (list, _checked(_list(MAX_DEPENDENCIES, _str_item),
-                           _pinned(NPM_SPEC, "npm package {value!r} must be pinned as name@x.y.z"))),
-    "download": (list, _list(5, _download)),
-}
-NETWORK = {
-    "install": (list, _checked(_list(MAX_DOMAINS, _str_item), _hosts)),
-    "runtime": (list, _checked(_list(MAX_DOMAINS, _str_item), _hosts)),
-}
-MANIFEST_FIELDS = {
-    "cubbie": (None, _version),
-    "dependencies": (lambda: _model({}, (), DEPENDENCIES), lambda value, loc: _model(value, loc, DEPENDENCIES)),
-    "network": (lambda: _model({}, (), NETWORK), lambda value, loc: _model(value, loc, NETWORK)),
-    "secrets": (list, _checked(_list(MAX_SECRETS, _secret), _unique_env)),
-    "login": (list, _list(3, _login)),
-}
-
-
-def empty_manifest() -> dict:
-    return _model({"cubbie": 1}, (), MANIFEST_FIELDS)
-
-
-def parse_manifest(raw: bytes | None) -> dict | None:
-    """Return cubbie.yaml as plain data with defaults filled in, or None when the file is absent."""
-    if raw is None:
-        return None
-    try:
-        data = yaml.safe_load(raw.decode("utf-8"))
-    except (UnicodeDecodeError, yaml.YAMLError):
-        raise SkillError(f"{MANIFEST} is not valid UTF-8 YAML.") from None
-    if not isinstance(data, dict):
-        raise SkillError(f"{MANIFEST} must be a mapping.")
-    try:
-        return _model(data, (), MANIFEST_FIELDS, required=("cubbie",))
-    except (_Invalid, _Problems) as exc:
-        errors = exc.errors if isinstance(exc, _Problems) else [exc]
-        problems = "; ".join(f"{'.'.join(str(p) for p in error.loc) or MANIFEST}: {error.message}" for error in errors[:5])
-        raise SkillError(f"{MANIFEST} is invalid: {problems}") from None
-
-
 # ---------------------------------------------------------------- SKILL.md
 
 
-def validate_package(files: dict[str, bytes], *, directory_name: str,
-                     reserved_names: frozenset[str] = BUILTIN_SKILL_NAMES) -> dict:
+def skill_name(value: str) -> str:
+    """A path-safe Skill name: lowercase ASCII letters, digits and single hyphens, at most 64 characters."""
+    text = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+    return NOT_NAME.sub("-", text).strip("-")[:MAX_NAME_CHARS].rstrip("-")
+
+
+def unique_name(name: str, taken) -> str:
+    if name not in taken:
+        return name
+    for number in itertools.count(2):
+        suffix = f"-{number}"
+        candidate = name[:MAX_NAME_CHARS - len(suffix)].rstrip("-") + suffix
+        if candidate not in taken:
+            return candidate
+
+
+def _text(value) -> str:
+    return "" if value is None or isinstance(value, (dict, list)) else str(value).strip()
+
+
+def _lenient(block: str) -> dict:
+    """Top-level `key: value` lines of frontmatter YAML rejects; indented lines continue the value above."""
+    data, key = {}, None
+    for line in block.splitlines():
+        match = TOP_LEVEL_KEY.match(line)
+        if match:
+            key, value = match.group(1), (match.group(2) or "").strip()
+            if value and not BLOCK_SCALAR.match(value):
+                data[key] = value[1:-1] if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'" else value
+            elif value or key in ("name", "description"):
+                data[key] = ""
+            else:
+                key = None
+        elif key is not None and line[:1] in (" ", "\t"):
+            data[key] = f"{data[key]} {line.strip()}".strip()
+        elif line.strip():
+            key = None
+    return data
+
+
+def read_skill_md(files: dict) -> tuple[str, dict, str, bool]:
+    """(SKILL.md text, frontmatter, body, read line by line)."""
     try:
-        content = files["SKILL.md"].decode("utf-8")
+        text = files["SKILL.md"].decode("utf-8")
     except KeyError:
         raise SkillError("No SKILL.md was found at the linked folder.") from None
     except UnicodeDecodeError:
         raise SkillError("SKILL.md must be UTF-8 text.") from None
-    match = FRONTMATTER.match(content)
+    content = text.removeprefix("\ufeff")
+    match = LENIENT_FRONTMATTER.match(content)
     if not match:
-        raise SkillError("SKILL.md must start with YAML frontmatter between --- lines.")
+        return text, {}, content, False
+    block, body = match.group(1) or "", content[match.end():]
     try:
-        data = yaml.safe_load(match.group(1)) or {}
+        data = yaml.safe_load(block) if block.strip() else {}
     except yaml.YAMLError:
-        raise SkillError("SKILL.md frontmatter is not valid YAML.") from None
-    if not isinstance(data, dict):
-        raise SkillError("SKILL.md frontmatter must be a mapping.")
-    name = str(data.get("name") or "").strip()
-    description = str(data.get("description") or "").strip()
-    if not NAME_PATTERN.match(name):
-        raise SkillError("name must use lowercase letters, digits and hyphens (at most 64 characters).")
-    if name != directory_name:
-        raise SkillError(f"name {name!r} must equal the folder name {directory_name!r}.")
-    if name in reserved_names:
-        raise SkillError(f"{name!r} is the name of a built-in Cubbie Skill; choose another name.")
-    if not description or len(description) > MAX_DESCRIPTION_CHARS:
-        raise SkillError(f"description is required and must be at most {MAX_DESCRIPTION_CHARS} characters.")
-    # Every other Markdown file is published next to SKILL.md for Cubbie's file tools.
-    for path, raw in files.items():
-        if path == "SKILL.md" or not path.endswith(".md"):
+        data = None
+    if isinstance(data, dict):
+        return text, data, body, False
+    return text, _lenient(block), body, True
+
+
+def first_paragraph(body: str) -> str:
+    lines, heading, fenced = [], "", False
+    for raw in body.splitlines():
+        line = raw.strip()
+        fence = line.startswith(("```", "~~~"))
+        if fence:
+            fenced = not fenced
+        if fence or fenced or not line.strip("-*_=> ") or line.startswith(("#", "|", "<", "![")):
+            if lines:
+                break
+            if not (fence or fenced) and line.startswith("#"):
+                heading = heading or line.lstrip("#").strip()
             continue
+        lines.append(line.lstrip("> "))
+    return " ".join(lines) or heading
+
+
+def required_commands(frontmatter: dict) -> list:
+    metadata = frontmatter.get("metadata")
+    if not isinstance(metadata, dict):
+        return []
+    found = []
+    for scope in (metadata, *(value for value in metadata.values() if isinstance(value, dict))):
+        requires = scope.get("requires")
+        bins = requires.get("bins") if isinstance(requires, dict) else None
+        if isinstance(bins, list):
+            found += [str(item).strip() for item in bins if BIN_NAME.match(str(item).strip())]
+    return list(dict.fromkeys(found))[:10]
+
+
+def texts(files: dict) -> list:
+    found = []
+    for data in files.values():
         try:
-            raw.decode("utf-8")
+            found.append(data.decode("utf-8"))
         except UnicodeDecodeError:
-            raise SkillError(f"{path}: Markdown files must be UTF-8 text.") from None
-    manifest = parse_manifest(files.get(MANIFEST))
+            continue
+    return found
+
+
+def install_lines(all_texts) -> list:
+    lines = []
+    for text in all_texts:
+        for raw in text.splitlines():
+            line = raw.strip().strip("`").removeprefix("$ ").strip()
+            if line and INSTALL_LINE.search(line) and line not in lines:
+                lines.append(line[:200])
+    return lines[:12]
+
+
+def key_names(all_texts) -> list:
+    found = []
+    for text in all_texts:
+        for match in TEXT_NAME.finditer(text):
+            name = next(group for group in match.groups() if group)
+            if KEY_NAME.match(name) and name not in found:
+                found.append(name)
+    return found[:20]
+
+
+def list_description(description: str) -> str:
+    first = SENTENCE_END.split(description.strip(), maxsplit=1)[0].strip()
+    return first if len(first) <= MAX_LIST_DESCRIPTION_CHARS else first[:MAX_LIST_DESCRIPTION_CHARS - 1].rstrip() + "…"
+
+
+def name_skills(folders: dict, *, fallback_names=(), reserved_names=BUILTIN_SKILL_NAMES) -> dict:
+    """The name Cubbie installs each folder of one link under (subpath -> name), and why it changed."""
+    wanted, declared = {}, {}
+    for path, files in folders.items():
+        _, frontmatter, _, _ = read_skill_md(files)
+        declared[path] = _text(frontmatter.get("name"))
+        candidates = (declared[path], posixpath.basename(path), *fallback_names)
+        wanted[path] = declared[path] if NAME_PATTERN.match(declared[path]) else next(filter(None, map(skill_name, candidates)), "skill")
+    names = {}
+    for path, name in wanted.items():
+        if name not in reserved_names and name not in names.values():
+            names[path] = name
+    taken = set(reserved_names) | set(names.values())
+    for path, name in wanted.items():
+        if path not in names:
+            names[path] = unique_name(name, taken)
+            taken.add(names[path])
+    fixes = {}
+    for path, name in names.items():
+        if name == declared[path]:
+            fixes[path] = None
+        elif not declared[path]:
+            fixes[path] = f"SKILL.md gives no name, so it is named {name!r}."
+        else:
+            reason = ("Skill names use lowercase letters, digits and hyphens" if name == wanted[path] else
+                      f"{wanted[path]!r} is a built-in Cubbie Skill" if wanted[path] in reserved_names else
+                      f"another Skill from this link is named {wanted[path]!r}")
+            fixes[path] = f"SKILL.md names it {declared[path]!r}; installed as {name!r} because {reason}."
+    return {path: (names[path], fixes[path]) for path in folders}
+
+
+def read_package(files: dict, name: str, name_fix=None) -> dict:
+    text, frontmatter, body, lenient = read_skill_md(files)
+    fixes = ["SKILL.md frontmatter is not valid YAML, so its fields were read line by line."] if lenient else []
+    fixes += [name_fix] if name_fix else []
+    description = _text(frontmatter.get("description"))
+    if not description:
+        description = first_paragraph(body)
+        if not description:
+            raise SkillError("SKILL.md has no description and no instructions to take one from.")
+        fixes.append("SKILL.md gives no description, so its first paragraph is used.")
+    if len(description) > MAX_DESCRIPTION_CHARS:
+        description = description[:MAX_DESCRIPTION_CHARS - 1].rstrip() + "…"
+        fixes.append(f"The description was shortened to {MAX_DESCRIPTION_CHARS} characters.")
     hashes = {path: hashlib.sha256(raw).hexdigest() for path, raw in sorted(files.items())}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return {"name": name, "description": description, "frontmatter": data, "skill_md": content,
-            "manifest": manifest or empty_manifest(), "package_sha256": digest}
+    markdown = texts({path: data for path, data in files.items() if path.endswith(".md")})
+    return {"name": name, "description": description, "listed_as": list_description(description), "frontmatter": frontmatter,
+            "skill_md": text, "fixes": fixes, "package_sha256": digest, "commands": required_commands(frontmatter),
+            "install_lines": install_lines(markdown), "env": key_names(texts(files))}
 
 
 # ---------------------------------------------------------------- report
 
 
-def warnings_for(package: dict, files: dict[str, bytes], folder: Path) -> list[str]:
-    notes = []
+def warnings_for(package: dict, files: dict, folder: Path) -> list:
+    notes = [f"Cubbie would fix this on install: {fix}" for fix in package["fixes"]]
     lines = len(package["skill_md"].splitlines())
     if lines > MAX_BODY_LINES:
         notes.append(f"SKILL.md has {lines} lines; the Agent Skills spec recommends under {MAX_BODY_LINES}. Move details into other files.")
-    if INSTALL_COMMAND.search(package["skill_md"]):
-        notes.append("SKILL.md mentions an install command; Cubbie never runs it. Declare packages in cubbie.yaml.")
+    if "cubbie.yaml" in files:
+        notes.append("cubbie.yaml is no longer read: write install commands, keys and logins in SKILL.md instead.")
     for path in sorted(set(PACKAGE_PATH.findall(package["skill_md"]))):
         if path not in files and not any(name.startswith(path + "/") for name in files):
             notes.append(f"SKILL.md refers to {path}, which is not in the folder.")
@@ -470,57 +326,11 @@ def warnings_for(package: dict, files: dict[str, bytes], folder: Path) -> list[s
         notes.append("The Agent Skills spec does not allow a trailing hyphen or '--' in name; other agents may reject it.")
     extra = sorted(str(key) for key in package["frontmatter"] if key not in SPEC_FIELDS)
     if extra:
-        notes.append(f"Frontmatter field(s) {', '.join(extra)} are not in the Agent Skills spec; other agents may reject them. "
-                     "Put Cubbie settings in cubbie.yaml.")
+        notes.append(f"Frontmatter field(s) {', '.join(extra)} are not in the Agent Skills spec; other agents may reject them.")
     return notes
 
 
-def check(folder: Path, reserved_names: frozenset[str] = BUILTIN_SKILL_NAMES, directory_name: str | None = None) -> dict:
-    """directory_name overrides the folder name, e.g. with the repository name for a Skill at a repository root."""
-    shown, folder = str(folder), folder.resolve()
-    if not folder.is_dir():
-        return {"folder": shown, "ok": False, "error": "Not a folder."}
-    try:
-        files = read_files(folder, folder_files(folder))
-        package = validate_package(files, directory_name=directory_name or folder.name, reserved_names=reserved_names)
-    except SkillError as exc:
-        return {"folder": shown, "ok": False, "error": str(exc)}
-    return {"folder": shown, "ok": True, "name": package["name"], "description": package["description"],
-            "files": len(files), "bytes": sum(len(data) for data in files.values()),
-            "package_sha256": package["package_sha256"], "manifest": package["manifest"],
-            "warnings": warnings_for(package, files, folder)}
-
-
-def pip_name(spec: str) -> str:
-    """PEP 503 normalized project name of `name`, `name[extra]` or `name==1.0`."""
-    return re.sub(r"[-_.]+", "-", re.split(r"[\[=]", spec, maxsplit=1)[0]).lower()
-
-
-def npm_name(spec: str) -> str:
-    """Package name of `name`, `@scope/name` or either with `@version`."""
-    head = spec[1:].partition("@")[0] if spec.startswith("@") else spec.partition("@")[0]
-    return ("@" + head) if spec.startswith("@") else head
-
-
-def version_conflicts(results: list[dict]) -> list[str]:
-    """Skills installed from one link share one set of packages, so they must agree on versions."""
-    owners, problems = {}, []
-    for result in results:
-        if not result["ok"]:
-            continue
-        deps = result["manifest"]["dependencies"]
-        entries = [("pip", pip_name(spec), spec) for spec in deps["pip"]] + \
-                  [("npm", npm_name(spec), spec) for spec in deps["npm"]] + \
-                  [("download", item["bin"], f"{item['bin']} from {item['url']}") for item in deps["download"]]
-        for kind, key, shown in entries:
-            seen = owners.setdefault((kind, key), (shown, result["name"]))
-            if seen[0] != shown:
-                problems.append(f"{result['name']} needs {shown}, but {seen[1]} needs {seen[0]}; "
-                                "Skills installed together must agree on package versions.")
-    return problems
-
-
-def expand(folder: Path) -> tuple[list[Path], str | None]:
+def expand(folder: Path) -> tuple:
     """The Skill folders a link to `folder` installs: itself when it has SKILL.md, else each Skill
     directly inside it (or inside its skills/ folder), at most 40."""
     if not folder.is_dir() or (folder / "SKILL.md").exists():
@@ -535,34 +345,50 @@ def expand(folder: Path) -> tuple[list[Path], str | None]:
     return [folder], None
 
 
-def check_all(folder: Path, reserved_names: frozenset[str] = BUILTIN_SKILL_NAMES) -> list[dict]:
+def check_all(folder: Path, reserved_names: frozenset = BUILTIN_SKILL_NAMES) -> list:
     """Check a Skill folder, or every Skill a link to a folder of Skills would install together."""
     skills, error = expand(folder)
     if error:
         return [{"folder": str(folder), "ok": False, "error": error}]
-    results = [check(skill, reserved_names) for skill in skills]
-    if len(results) > 1:
-        conflicts = version_conflicts(results)
-        if conflicts:
-            results.append({"folder": str(folder), "ok": False, "error": conflicts[0]})
-    return results
+    results, readable = {}, {}
+    for skill in skills:
+        shown, resolved = str(skill), skill.resolve()
+        if not resolved.is_dir():
+            results[shown] = {"folder": shown, "ok": False, "error": "Not a folder."}
+            continue
+        try:
+            readable[shown] = (resolved, read_files(resolved, folder_files(resolved)))
+            read_skill_md(readable[shown][1])
+        except SkillError as exc:
+            results[shown] = {"folder": shown, "ok": False, "error": str(exc)}
+            readable.pop(shown, None)
+    named = name_skills({shown: files for shown, (_, files) in readable.items()},
+                        fallback_names=(Path(folder).resolve().name,), reserved_names=reserved_names)
+    for shown, (resolved, files) in readable.items():
+        name, fix = named[shown]
+        try:
+            package = read_package(files, name, fix)
+        except SkillError as exc:
+            results[shown] = {"folder": shown, "ok": False, "error": str(exc)}
+            continue
+        results[shown] = {"folder": shown, "ok": True, "name": package["name"], "description": package["description"],
+                          "listed_as": package["listed_as"], "files": len(files), "bytes": sum(len(data) for data in files.values()),
+                          "package_sha256": package["package_sha256"], "commands": package["commands"],
+                          "install_lines": package["install_lines"], "env": package["env"],
+                          "warnings": warnings_for(package, files, resolved)}
+    return [results[str(skill)] for skill in skills]
 
 
 def render(result: dict) -> str:
     if not result["ok"]:
         return f"FAIL {result['folder']}\n  {result['error']}"
-    manifest = result["manifest"]
-    deps, network = manifest["dependencies"], manifest["network"]
     rows = [
         ("description", result["description"]),
+        ("in the list", result["listed_as"] if result["listed_as"] != result["description"] else ""),
         ("files", f"{result['files']} file{'s' * (result['files'] != 1)}, {result['bytes']:,} bytes"),
-        ("pip", ", ".join(deps["pip"])),
-        ("npm", ", ".join(deps["npm"])),
-        ("downloads", ", ".join(item["url"] for item in deps["download"])),
-        ("install hosts", ", ".join(network["install"])),
-        ("runtime hosts", ", ".join(network["runtime"])),
-        ("keys", ", ".join(f"{item['env']} ({item['label']})" for item in manifest["secrets"])),
-        ("logins", ", ".join(f"{item['id']}: {item['command']}" for item in manifest["login"])),
+        ("commands", ", ".join(result["commands"])),
+        ("install", " | ".join(result["install_lines"])),
+        ("keys (env)", ", ".join(result["env"])),
     ]
     lines = [f"OK   {result['name']}  {result['folder']}"]
     lines += [f"  {label + ':':15}{value}" for label, value in rows if value]
@@ -570,10 +396,9 @@ def render(result: dict) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Check Skill folders against Cubbie's install rules before pushing them to GitHub.")
-    parser.add_argument("folders", nargs="+", type=Path,
-                        help="Skill folders (each folder name must equal the Skill name), or a folder of Skills")
+    parser.add_argument("folders", nargs="+", type=Path, help="Skill folders, or a folder of Skills")
     parser.add_argument("--json", action="store_true", help="print one JSON object per folder")
     args = parser.parse_args(argv)
     results = [result for folder in args.folders for result in check_all(folder)]

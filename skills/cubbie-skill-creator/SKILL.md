@@ -1,6 +1,6 @@
 ---
 name: cubbie-skill-creator
-description: Create new skills, modify and improve existing skills, and measure skill performance, including Skills for Cubbie, the iMessage student assistant, that stay standard Agent Skills. Use when users want to create a skill from scratch, edit, or optimize an existing skill, write a Cubbie Skill or cubbie.yaml, check a skill against Cubbie's install rules, publish a skill to GitHub for installing, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
+description: Create new skills, modify and improve existing skills, and measure skill performance, including Skills for Cubbie, the iMessage student assistant, that stay standard Agent Skills. Use when users want to create a skill from scratch, edit, or optimize an existing skill, write a Cubbie Skill, check a skill against Cubbie's install rules, publish a skill to GitHub for installing, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
 ---
 
 # Cubbie Skill Creator
@@ -84,10 +84,10 @@ Based on the user interview, fill in these components:
 
 **For Cubbie**, also:
 
-- Keep `description` within 1024 characters (the Agent Skills limit, which Cubbie enforces) and `SKILL.md` under 500 lines; move details into `references/*.md`. Cubbie publishes every `.md` file in the folder to its file tools, so keep them UTF-8; other files reach only the sandbox. The folder name must equal `name`, and it must not be the name of a built-in Cubbie skill.
+- Keep `description` within 1024 characters (the Agent Skills limit) and put the main trigger in its first sentence: when a student has many Skills, Cubbie's Skill list shows only that sentence (cut to 200 characters) and finds the rest by searching names and descriptions. Keep `SKILL.md` under 500 lines; move details into `references/*.md`. Cubbie copies the whole folder to the student's drive (`/user/skills/<name>/`) and can read every file in it. Use a lowercase `name` that matches the folder; Cubbie repairs other names (and adds `-2` to a built-in name), but the student then sees a different name than you wrote.
 - Name Cubbie's abilities in plain words, and write script steps as commands relative to the skill folder (`python3 scripts/plan.py --course "<name>"`). Add a short "Replies" section following `references/imessage-style.md`.
-- Create `cubbie.yaml` only when scripts need packages, hosts, keys or a login, following `references/cubbie-yaml.md`. Keep `SKILL.md` frontmatter to the standard fields and never put install commands in it; other agents read only `SKILL.md`.
-- Scripts cannot call Cubbie's abilities: have Cubbie fetch the data first and pass it in as arguments or a file, including the student's local date and time (the sandbox clock may be in another time zone). Give each script a `--sample` mode that uses a small bundled file under `assets/` and leaves the student's saved state alone, so it can be tried without keys or network. Save state under `$SKILL_DATA_DIR`. Don't use exit codes 97 or 98: Cubbie reserves them for "the installed files are missing or changed".
+- Write everything Cubbie needs in `SKILL.md`; there is no extra Cubbie file. If scripts need packages, add a short **Setup** section with exact, pinned install commands: `npm install -g some-cli@1.4.2` (kept across restarts), or for Python a virtual environment under HOME, `python3 -m venv ~/.local/share/venvs/<name> && ~/.local/share/venvs/<name>/bin/pip install requests==2.32.3`, run with that environment's `python`. The student sees these lines in the install summary before agreeing; Cubbie runs them afterwards. Never pipe a downloaded script into a shell. Keys and sign-ins follow `references/cubbie-auth.md`. Keep `SKILL.md` frontmatter to the standard fields.
+- Scripts cannot call Cubbie's abilities: have Cubbie fetch the data first and pass it in as arguments or a file, including the student's local date and time (the sandbox clock may be in another time zone). Give each script a `--sample` mode that uses a small bundled file under `assets/` and leaves the student's saved state alone, so it can be tried without keys or network. Save state under HOME (for example `~/.config/<name>/`), which survives restarts and Skill updates; an update replaces the Skill's folder.
 - Say what to do where an ability is missing, whether an account is not connected or the skill runs outside Cubbie: ask for the data instead, or list the times the user can set reminders for themselves.
 
 ### Skill Writing Guide
@@ -99,7 +99,6 @@ skill-name/
 ├── SKILL.md (required)
 │   ├── YAML frontmatter (name, description required)
 │   └── Markdown instructions
-├── cubbie.yaml (optional, Cubbie only: packages, hosts, keys, logins)
 └── Bundled Resources (optional)
     ├── scripts/    - Executable code for deterministic/repetitive tasks
     ├── references/ - Docs loaded into context as needed
@@ -501,8 +500,7 @@ The agents/ directory contains instructions for specialized subagents. Read them
 The references/ directory has additional documentation:
 - `references/schemas.md` — JSON structures for evals.json, grading.json, etc.
 - `references/cubbie-capabilities.md` — What Cubbie can already do, how to name it, scenario starting points
-- `references/cubbie-auth.md` — The five sign-in approaches and how to choose
-- `references/cubbie-yaml.md` — Every `cubbie.yaml` field and the rules Cubbie enforces
+- `references/cubbie-auth.md` — The five sign-in approaches, how to choose, and how to write keys and logins in `SKILL.md`
 - `references/imessage-style.md` — How replies should read in a text thread
 - `references/cubbie-testing.md` — Local checks, publishing, and the on-Cubbie test checklist
 

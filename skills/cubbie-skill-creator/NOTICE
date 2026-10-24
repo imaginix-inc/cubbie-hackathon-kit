@@ -14,8 +14,7 @@ Changes made for Cubbie (cubbie.ai), 2026-10-20:
   optimization; replaced .skill packaging with publishing to GitHub; added Codex
   notes. The general workflow is otherwise unchanged.
 - Added references/cubbie-capabilities.md, references/cubbie-auth.md,
-  references/cubbie-yaml.md, references/imessage-style.md and
-  references/cubbie-testing.md.
+  references/imessage-style.md and references/cubbie-testing.md.
 - Added scripts/validate_cubbie_skill.py (Cubbie's install checks, standalone) and
   scripts/github_link.py (prints the pinned GitHub install link).
 - Removed scripts/package_skill.py and scripts/quick_validate.py, which built and
@@ -26,5 +25,10 @@ Updated 2026-10-23 to Cubbie's install rules at that date (descriptions up to 10
 characters, no SKILL.md or references size caps, UTF-8 for every Markdown file, 10 MiB
 per Skill, folders of Skills, background logins, run-time website approval, update by
 link, reserved exit codes, the 30 MiB archive limit).
+
+Updated 2026-10-24 to Cubbie's install rules at that date: a Skill is a plain folder
+copied to the student's drive and cubbie.yaml is no longer read (references/cubbie-yaml.md
+removed); setup commands, keys and logins are written in SKILL.md; names and descriptions
+are repaired instead of refused; keys reach a command that names them; no install limit.
 
 All other files are unchanged from the source commit.

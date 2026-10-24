@@ -13,12 +13,22 @@ description: Publishes a folder of web pages (HTML, CSS, JavaScript) to the stud
 
 Only static files: a folder with an `index.html`. No build step and no server code.
 
+## Setup (first time only)
+
+Install the Netlify CLI once; Cubbie keeps global npm packages across restarts:
+
+```bash
+npm install -g netlify-cli@27.12.1
+```
+
+If `netlify` is not found later, run this again.
+
 ## Sign in (first time only)
 
 The student signs in to their own free Netlify account in the browser. There is no key to paste.
 
 1. Run `python3 scripts/publish.py status`. Exit code 0 means the student is signed in; go to Publish.
-2. Start the sign-in with the login command from `cubbie.yaml`:
+2. Start the sign-in:
 
    ```bash
    netlify login --request "Cubbie wants to publish web pages for you" --json

@@ -2,8 +2,8 @@
 
 A skill for Claude Code and Codex that helps you write Skills for [Cubbie](https://cubbie.ai), the AI assistant in
 students' iMessage. It is Anthropic's [skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator)
-with Cubbie additions: it asks which Cubbie abilities your Skill needs, picks the lightest sign-in, writes
-`cubbie.yaml` only when scripts need it, checks the folder against Cubbie's install rules, and gives you the GitHub
+with Cubbie additions: it asks which Cubbie abilities your Skill needs, picks the lightest sign-in, writes setup,
+keys and sign-in steps into `SKILL.md`, checks the folder against Cubbie's install rules, and gives you the GitHub
 link to text to Cubbie plus a checklist of test conversations.
 
 The Skills it writes stay standard [Agent Skills](https://agentskills.io): the same folder works in Cubbie, Claude
