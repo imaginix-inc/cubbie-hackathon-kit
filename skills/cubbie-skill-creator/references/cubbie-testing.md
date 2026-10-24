@@ -57,12 +57,14 @@ Run each script the way `SKILL.md` tells Cubbie to, from the Skill folder:
    ```
 
    It re-runs the structure checks, confirms the commit is pushed, and lists the repository with git without a
-   sign-in, as a fresh clone on Cubbie's computer would. Then it prints two links:
+   sign-in, as a fresh clone on Cubbie's computer would. Then it prints three links:
+   - the **repository link** (`https://github.com/<owner>/<repo>`): installs the newest commit of the default branch.
+     Submit this one to the hackathon.
    - the **branch link** (`https://github.com/<owner>/<repo>/tree/<branch>/<folder>`; GitLab uses `/-/tree/`): test
      with this one. Updating a Skill means texting its link again; Cubbie then fetches the newest push and replaces
      its copy. Branch names with `/` work.
    - the **pinned link** (`.../tree/<commit>/<folder>`): always that exact commit, so texting it again never picks
-     up a fix. Share or submit it once the Skill works, and get a new one after each change.
+     up a fix. Use it only to share one fixed version, and get a new one after each change.
 
    Links to other hosts can name only the repository, so for those the script prints the repository link: Cubbie
    clones the newest commit of the default branch and looks for the Skill folders in it.

@@ -141,11 +141,10 @@ def render(result: dict) -> str:
     if result["ok"]:
         if len(result.get("skills") or []) > 1:
             lines.append(f"This link holds {len(result['skills'])} Skills: {', '.join(result['skills'])}")
-        if result["pinned"] == result["repository"]:
-            lines += ["Repository link (installs the newest commit of the default branch):", f"  {result['pinned']}"]
-        else:
-            lines += ["Pinned link (always this commit; share it and use it for submission once it works):",
-                      f"  {result['pinned']}"]
+        lines += ["Repository link (installs the newest commit of the default branch; submit this one):",
+                  f"  {result['repository']}"]
+        if result["pinned"] != result["repository"]:
+            lines += ["Pinned link (always this exact commit; only to share one fixed version):", f"  {result['pinned']}"]
         if result.get("latest"):
             lines += ["Branch link (the newest push; test with it, and text it again after each push to update):",
                       f"  {result['latest']}"]

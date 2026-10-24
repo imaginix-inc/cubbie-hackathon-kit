@@ -56,7 +56,7 @@ Keep a short Track 1 checklist in the conversation and show it when a step finis
 is left:
 
 ```text
-Track 1  [x] idea  [x] Skill written  [ ] passes checks  [ ] works on our Cubbie  [ ] demo posted  [ ] submitted
+Track 1  [x] idea  [x] Skill written  [ ] passes checks  [ ] works on our Cubbie  [ ] submitted  [ ] demo posted (optional)
 ```
 
 Tick a box only for what you saw done in this conversation or what the team told you they did. Asking to submit
@@ -85,17 +85,17 @@ are judged privately. Track 1 also unlocks Tracks 2 and 3.
 3. **Build it with `cubbie-skill-creator`** (in this kit; in Codex, `$cubbie-skill-creator`). Hand over: the
    moment, the abilities and sign-in you settled on, that it's a Track 1 entry for the Cubbie Hackathon, and that
    it has to end in a public GitHub repo. It interviews them, writes the Skill, checks the Skill folder, helps
-   publish it, and prints two links (a branch link and a link pinned to the commit) plus a checklist for testing on
-   their own Cubbie. If that skill isn't installed, point them to the kit's README.
+   publish it, and prints the links (the repository link to submit, a branch link to test with and a link pinned to
+   a commit) plus a checklist for testing on their own Cubbie. If that skill isn't installed, point them to the kit's README.
 4. **Test on Cubbie.** They text the branch link to Cubbie and go through the checklist. After each fix: push,
    text the branch link again (Cubbie fetches the newest push and replaces its copy), repeat. Track 1 is done when
    Cubbie installs the Skill from its link and the main flow works on a real account.
-5. **Demo video.** A short public video showing the student moment and Cubbie handling it, posted on TikTok or
+5. **Demo video (optional).** A short public video showing the student moment and Cubbie handling it, posted on TikTok or
    Instagram (the only platforms the form accepts). Offer a shot list: the moment in the first seconds, the real
    iMessage exchange, the result. Length, hashtags or tags haven't been announced; don't make them up.
-6. **Submit** (section 4): the pinned link, platform, post link, team, one-liner. The pinned link always installs
-   exactly what they tested, for voters too. They can submit as soon as they have a repo and a post, then keep
-   editing while the window is open.
+6. **Submit** (section 4): the repository link, team and one-liner, plus the platform and post link if they have
+   a post (it is optional). Cubbie installs the newest commit of the repository, so the Skill keeps up with what
+   they push. They can submit as soon as they have a public repo, then keep editing while the window is open.
    Before a Track 1 submit, check the two boxes that matter most. **Passes checks**: if the Skill's folder is on
    this computer, run `python3 ../cubbie-skill-creator/scripts/validate_cubbie_skill.py <folder>` (needs PyYAML,
    or use `uv run`); a `FAIL` means there is no readable `SKILL.md` to install, and `warning:` lines are worth a
@@ -106,8 +106,8 @@ are judged privately. Track 1 also unlocks Tracks 2 and 3.
    automatically. More posts with the demo (up to 5 besides the main one) can be added with `posts` until voting
    closes.
 
-When the Skill changes after submitting, push, get the new pinned link from `cubbie-skill-creator` (its
-`github_link.py` script), and update the entry with `submit --track skills --repo <new link>`.
+When the Skill changes after submitting, push. The repository link in the entry already installs the newest commit,
+so the entry needs no update (add the demo post later with `submit --track skills --platform ... --post ...`).
 
 ## 3. Tracks 2 and 3
 
@@ -138,8 +138,8 @@ python3 scripts/hackathon.py mine                                           # th
 python3 scripts/hackathon.py submit --track skills --team "Night Owls" --name "Dorm Chef" \
   --pitch "It's 1 AM and nothing is open." \
   --member "Ana Ruiz <ana@school.edu>" --member "Ben Wu <ben@school.edu>" \
-  --repo https://github.com/night-owls/dorm-chef/tree/<commit>/dorm-chef \
-  --platform tiktok --post https://www.tiktok.com/@nightowls/video/123
+  --repo https://github.com/night-owls/dorm-chef \
+  --platform tiktok --post https://www.tiktok.com/@nightowls/video/123   # the post is optional
 
 # Track 2 or 3
 python3 scripts/hackathon.py submit --track agents --team "Night Owls" --pitch "..." \

@@ -308,12 +308,13 @@ def check_entry(track: str, e: dict) -> list:
             problems.append("Track 1 needs the Skill's GitHub repo (--repo).")
         elif not GITHUB_REPO.match(e["repo"]):
             problems.append("The Skill link needs to be a GitHub repo, like https://github.com/your-team/your-skill")
-        if e["platform"] not in PLATFORMS:
-            problems.append("Track 1 needs the platform of the social post: --platform tiktok or --platform instagram.")
-        if not e["post"]:
-            problems.append("Track 1 needs the public social post with your demo video (--post).")
-        elif e["platform"] in PLATFORMS and not host_matches(e["post"], PLATFORMS[e["platform"]][1]):
-            problems.append(f"That doesn't look like a {PLATFORMS[e['platform']][0]} link: {e['post']}")
+        if e["platform"] or e["post"]:  # the social post is optional, but a post needs its platform
+            if e["platform"] not in PLATFORMS:
+                problems.append("A social post needs its platform: --platform tiktok or --platform instagram.")
+            elif not e["post"]:
+                problems.append("Add the post link (--post), or leave out --platform: the post is optional.")
+            elif not host_matches(e["post"], PLATFORMS[e["platform"]][1]):
+                problems.append(f"That doesn't look like a {PLATFORMS[e['platform']][0]} link: {e['post']}")
         if e["website"] or e["video"]:
             problems.append("Track 1 has no website or video field: the demo goes in --post, the Skill in --repo.")
     else:
@@ -361,8 +362,9 @@ def entry_text(track: str, e: dict) -> str:
              f"  One-liner: {e['pitch']}"]
     lines += [f"  Member:    {m['name']} <{m['email'].lower()}>" for m in e["members"]]
     if track == "skills":
+        post = (f"{e['post']} ({PLATFORMS.get(e['platform'], (e['platform'] or '?',))[0]})" if e["post"] else "(none)")
         lines += [f"  Skill repo: {e['repo']}",
-                  f"  Social post ({PLATFORMS.get(e['platform'], (e['platform'] or '?',))[0]}): {e['post']}"]
+                  f"  Social post: {post}"]
     else:
         lines += [f"  GitHub repo: {e['repo']}",
                   f"  Website:     {e['website'] or '(none)'}",
