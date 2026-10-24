@@ -1,13 +1,13 @@
 ---
 name: cubbie-skill-creator
-description: Create new skills, modify and improve existing skills, and measure skill performance, including Skills for Cubbie, the iMessage student assistant, that stay standard Agent Skills. Use when users want to create a skill from scratch, edit, or optimize an existing skill, write a Cubbie Skill or cubbie.yaml, check a skill against Cubbie's install rules, publish a skill to GitHub for installing, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
+description: Create new skills, modify and improve existing skills, and measure skill performance, including Skills for Cubbie, the iMessage student assistant, that stay standard Agent Skills. Use when users want to create a skill from scratch, edit, or optimize an existing skill, write a Cubbie Skill, check a skill against Cubbie's install rules, publish a skill to GitHub for installing, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
 ---
 
 # Cubbie Skill Creator
 
 A skill for creating new skills and iteratively improving them.
 
-This is Anthropic's skill-creator with additions for Cubbie, an AI assistant that lives in students' iMessage and installs a skill when a student texts it the skill's GitHub link. When the skill is meant for Cubbie, the interview, drafting, testing and publishing steps below have Cubbie branches. Everything else is unchanged, and the result stays a standard [Agent Skill](https://agentskills.io) that also works in Claude Code, Codex and other agents.
+This is Anthropic's skill-creator with additions for Cubbie, an AI assistant that lives in students' iMessage and installs a skill when a student texts it a link to the skill's folder (on GitHub or any other https git host). When the skill is meant for Cubbie, the interview, drafting, testing and publishing steps below have Cubbie branches. Everything else is unchanged, and the result stays a standard [Agent Skill](https://agentskills.io) that also works in Claude Code, Codex and other agents.
 
 At a high level, the process of creating a skill goes like this:
 
@@ -54,7 +54,7 @@ Start by understanding the user's intent. The current conversation might already
 2. When should this skill trigger? (what user phrases/contexts)
 3. What's the expected output format?
 4. Should we set up test cases to verify the skill works? Skills with objectively verifiable outputs (file transforms, data extraction, code generation, fixed workflow steps) benefit from test cases. Skills with subjective outputs (writing style, art) often don't need them. Suggest the appropriate default based on the skill type, but let the user decide.
-5. Where will the skill run? If the user mentions Cubbie, iMessage, the hackathon, or students installing it from a GitHub link, the target is Cubbie: also follow "When the target is Cubbie" below.
+5. Where will the skill run? If the user mentions Cubbie, iMessage, the hackathon, or students installing it from a link, the target is Cubbie: also follow "When the target is Cubbie" below.
 
 ### Interview and Research
 
@@ -84,10 +84,10 @@ Based on the user interview, fill in these components:
 
 **For Cubbie**, also:
 
-- Keep `description` within 1024 characters (the Agent Skills limit, which Cubbie enforces) and `SKILL.md` under 500 lines; move details into `references/*.md`. Cubbie publishes every `.md` file in the folder to its file tools, so keep them UTF-8; other files reach only the sandbox. The folder name must equal `name`, and it must not be the name of a built-in Cubbie skill.
+- Keep `description` within 1024 characters (the Agent Skills limit) and put the main trigger in its first sentence: when a student has many Skills, Cubbie's Skill list shows only that sentence (cut to 200 characters) and finds the rest by searching names and descriptions. Keep `SKILL.md` under 500 lines; move details into `references/*.md`. Cubbie copies the whole folder to the student's drive (`/user/skills/<name>/`) and can read every file in it. Use a lowercase `name` that matches the folder; Cubbie repairs other names (and adds `-2` to a built-in name), but the student then sees a different name than you wrote.
 - Name Cubbie's abilities in plain words, and write script steps as commands relative to the skill folder (`python3 scripts/plan.py --course "<name>"`). Add a short "Replies" section following `references/imessage-style.md`.
-- Create `cubbie.yaml` only when scripts need packages, hosts, keys or a login, following `references/cubbie-yaml.md`. Keep `SKILL.md` frontmatter to the standard fields and never put install commands in it; other agents read only `SKILL.md`.
-- Scripts cannot call Cubbie's abilities: have Cubbie fetch the data first and pass it in as arguments or a file, including the student's local date and time (the sandbox clock may be in another time zone). Give each script a `--sample` mode that uses a small bundled file under `assets/` and leaves the student's saved state alone, so it can be tried without keys or network. Save state under `$SKILL_DATA_DIR`. Don't use exit codes 97 or 98: Cubbie reserves them for "the installed files are missing or changed".
+- Write everything Cubbie needs in `SKILL.md`; there is no extra Cubbie file. If scripts need packages, add a short **Setup** section with exact, pinned install commands: `npm install -g some-cli@1.4.2` (kept across restarts), or for Python a virtual environment under HOME, `python3 -m venv ~/.local/share/venvs/<name> && ~/.local/share/venvs/<name>/bin/pip install requests==2.32.3`, run with that environment's `python`. The student sees these lines in the install summary before agreeing; Cubbie runs them afterwards. Never pipe a downloaded script into a shell. Keys and sign-ins follow `references/cubbie-auth.md`. Keep `SKILL.md` frontmatter to the standard fields.
+- Scripts cannot call Cubbie's abilities: have Cubbie fetch the data first and pass it in as arguments or a file, including the student's local date and time (the sandbox clock may be in another time zone). Give each script a `--sample` mode that uses a small bundled file under `assets/` and leaves the student's saved state alone, so it can be tried without keys or network. Save state under HOME (for example `~/.config/<name>/`), which survives restarts and Skill updates; an update replaces the Skill's folder.
 - Say what to do where an ability is missing, whether an account is not connected or the skill runs outside Cubbie: ask for the data instead, or list the times the user can set reminders for themselves.
 
 ### Skill Writing Guide
@@ -99,7 +99,6 @@ skill-name/
 ├── SKILL.md (required)
 │   ├── YAML frontmatter (name, description required)
 │   └── Markdown instructions
-├── cubbie.yaml (optional, Cubbie only: packages, hosts, keys, logins)
 └── Bundled Resources (optional)
     ├── scripts/    - Executable code for deterministic/repetitive tasks
     ├── references/ - Docs loaded into context as needed
@@ -438,11 +437,11 @@ The optimizer calls the `claude` CLI, so it runs only where Claude Code is insta
 
 ### Publish to GitHub
 
-Skills are shared as a folder in a public GitHub repository: Cubbie installs from a GitHub link, and Claude Code and Codex users can copy the same folder. When the skill is in good shape:
+Skills are shared as a folder in a public git repository, on GitHub for the hackathon: Cubbie installs from a link to it (any https git host works), and Claude Code and Codex users can copy the same folder. When the skill is in good shape:
 
 1. Run `python3 scripts/validate_cubbie_skill.py <path/to/skill-folder>` from this skill-creator's folder (it needs PyYAML, or use `uv run`). Cubbie skills must pass. For other skills it is a quick structure check of the Agent Skills basics (frontmatter, name, a description within 1024 characters).
 2. Help the user put the folder in a public repository, as the repository root or as a folder named like the skill, then commit and push. Ask before creating a repository, changing its visibility or pushing.
-3. Run `python3 scripts/github_link.py <path/to/skill-folder>`. It confirms the push, downloads the commit the way Cubbie does, and prints two links: a branch link to test with (texting it again after a push installs the newest commit) and a link pinned to the commit to share or submit once the skill works. For a Cubbie skill, also give the user the test checklist from `references/cubbie-testing.md`, filled in for this skill.
+3. Run `python3 scripts/github_link.py <path/to/skill-folder>`. It confirms the push, checks that the repository can be read without a sign-in as Cubbie would, and prints two links: a branch link to test with (texting it again after a push installs the newest commit) and a link pinned to the commit to share or submit once the skill works. For a Cubbie skill, also give the user the test checklist from `references/cubbie-testing.md`, filled in for this skill.
 
 ---
 
@@ -501,8 +500,7 @@ The agents/ directory contains instructions for specialized subagents. Read them
 The references/ directory has additional documentation:
 - `references/schemas.md` — JSON structures for evals.json, grading.json, etc.
 - `references/cubbie-capabilities.md` — What Cubbie can already do, how to name it, scenario starting points
-- `references/cubbie-auth.md` — The five sign-in approaches and how to choose
-- `references/cubbie-yaml.md` — Every `cubbie.yaml` field and the rules Cubbie enforces
+- `references/cubbie-auth.md` — The five sign-in approaches, how to choose, and how to write keys and logins in `SKILL.md`
 - `references/imessage-style.md` — How replies should read in a text thread
 - `references/cubbie-testing.md` — Local checks, publishing, and the on-Cubbie test checklist
 

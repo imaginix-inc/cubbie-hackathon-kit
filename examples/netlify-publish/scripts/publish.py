@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Publish a folder of web pages to the student's own Netlify account and print the public link.
 
-The Netlify CLI, installed by Cubbie from cubbie.yaml, does the work. Its sign-in is stored under $HOME,
-which Cubbie keeps for the student, so they sign in once. Site IDs are remembered in $SKILL_DATA_DIR so
-publishing again under the same name updates the same site instead of creating a new one.
+The Netlify CLI (installed with npm install -g, see SKILL.md) does the work. Its sign-in is stored under $HOME,
+which Cubbie keeps for the student, so they sign in once. Site IDs are remembered under HOME
+(~/.config/netlify-publish) so publishing again under the same name updates the same site instead of creating a new one.
 
     python3 scripts/publish.py status
     python3 scripts/publish.py deploy --dir /workspace/your_files/portfolio --name maya-portfolio
@@ -35,7 +35,7 @@ def netlify(*args: str) -> tuple[int, dict, str]:
     try:
         result = subprocess.run(["netlify", *args, "--json"], capture_output=True, text=True, timeout=300)
     except FileNotFoundError:
-        fail("The Netlify CLI is missing; reinstall the Skill.", 5)
+        fail("The Netlify CLI is missing; install it with: npm install -g netlify-cli@27.12.1", 5)
     except subprocess.TimeoutExpired:
         fail("Netlify took too long to answer; try again later.", 5)
     out = result.stdout
@@ -48,7 +48,8 @@ def netlify(*args: str) -> tuple[int, dict, str]:
 
 
 def sites_file() -> Path:
-    return Path(os.environ.get("SKILL_DATA_DIR") or ".") / "sites.json"
+    # SKILL_DATA_DIR is where Skills installed before folders kept their data.
+    return Path(os.environ.get("SKILL_DATA_DIR") or Path.home() / ".config" / "netlify-publish") / "sites.json"
 
 
 def load_sites() -> dict:

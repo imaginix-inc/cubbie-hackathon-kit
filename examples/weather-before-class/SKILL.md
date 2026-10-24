@@ -13,21 +13,32 @@ description: Checks the next hours of weather in the student's city and says whe
 
 Do not use it for forecasts more than 48 hours ahead.
 
+## Setup (first time only)
+
+The script needs `requests` 2.32.3. Install it once into its own virtual environment under HOME, which Cubbie keeps:
+
+```bash
+python3 -m venv ~/.local/share/venvs/weather-before-class && ~/.local/share/venvs/weather-before-class/bin/pip install requests==2.32.3
+```
+
+If `~/.local/share/venvs/weather-before-class/bin/python` is missing later, run this again.
+
 ## Key
 
-This Skill needs the student's own free OpenWeather API key (`OPENWEATHER_API_KEY`).
-If Cubbie reports that the key is missing, send the student the secure link to save it.
-Never ask the student to paste the key into the chat. New OpenWeather keys can take up to two hours to start working.
+This Skill needs the student's own free OpenWeather API key, saved in Cubbie as `OPENWEATHER_API_KEY`
+(the student gets one at https://home.openweathermap.org/api_keys). If it is not saved yet, send the student the
+secure link to save it. Never ask the student to paste the key into the chat. New OpenWeather keys can take up to
+two hours to start working. Commands receive the key only when they name it, as in the run command below.
 
 ## Steps
 
 1. Work out the city. Use the city the student just named. Otherwise run the script without `--city`; it uses the saved city.
    If no city is saved, ask the student which city their campus is in.
 2. Pick units: `--units imperial` for students in the United States, otherwise `--units metric`.
-3. Run:
+3. Run from this Skill's folder:
 
    ```bash
-   python3 scripts/forecast.py --city "<City,country code>" --units <units> --hours <hours>
+   OPENWEATHER_API_KEY="$OPENWEATHER_API_KEY" ~/.local/share/venvs/weather-before-class/bin/python scripts/forecast.py --city "<City,country code>" --units <units> --hours <hours>
    ```
 
    Set `--hours` to cover the time the student asked about (default 12, at most 48).

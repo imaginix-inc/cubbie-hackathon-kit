@@ -9,8 +9,8 @@ service, and stop there.
 | 1 | No sign-in | The data is public: menus, events, transit, weather, open APIs | Nothing | Nothing extra |
 | 2 | Accounts already connected to Cubbie | The Skill needs Canvas or Google data | Nothing, or connects once when Cubbie asks | Name the ability in `SKILL.md` |
 | 3 | Sign in on the website in Cubbie's browser | The service is a website with no API: campus portals, room booking, food ordering | Fills a secure login page once, or signs in by taking over the browser; takes over again for payment or two-factor codes | The site, the steps, and where the student must confirm, in `SKILL.md` |
-| 4 | Command-line login with a link | A CLI signs in through a browser link (device-code style) | Taps the link and approves in their own browser | A `login` entry in `cubbie.yaml` |
-| 5 | API key from the student | The service only issues personal API keys | Opens a secure page, pastes the key once, chooses Save | A `secrets` entry in `cubbie.yaml`, with a link to where the key is created |
+| 4 | Command-line login with a link | A CLI signs in through a browser link (device-code style) | Taps the link and approves in their own browser | The login and status commands, in `SKILL.md` |
+| 5 | API key from the student | The service only issues personal API keys | Opens a secure page, pastes the key once, chooses Save | The variable name and where the key is created, in `SKILL.md` |
 
 ## Choosing
 
@@ -31,11 +31,15 @@ If none fits, the Skill probably needs a team-owned backend; see "Team keys" bel
   reused in later conversations.
 - **Keys are matched by variable name.** A student who already saved `OPENAI_API_KEY` for another Skill is not asked
   again, so use the conventional name when one exists (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GITHUB_TOKEN`,
-  `NOTION_API_KEY`, ...).
+  `NOTION_API_KEY`, ...). The name must end in `_API_KEY`, `_TOKEN`, `_SECRET`, `_CLIENT_ID`, `_USERNAME`,
+  `_PASSWORD`, `_EMAIL` or `_PHONE`.
+- **A command gets a key only when it names it.** `curl -H "Authorization: Bearer $EXAMPLE_API_KEY" ...` works as
+  written; for a script that reads the variable itself, write the run command as
+  `EXAMPLE_API_KEY="$EXAMPLE_API_KEY" python3 scripts/<name>.py ...` so Cubbie copies it.
 - **CLI logins run in the background.** Cubbie starts the login command in the background and texts the student the
   link (and code) as soon as it is printed; the command can keep waiting for approval, for up to an hour. A two-step
   form (start, then check) works too. Standard input is closed, so the command must not ask questions; pass answers
-  as flags. Background runs get no saved keys, so a login must not need one.
+  as flags. A login command that needs a key names it like any other command.
 - **Team keys are not hosted.** Cubbie cannot keep the team's key and use it on behalf of every student. Use a
   backend that does not need a secret from the client, or ship a restricted, quota-limited key and assume anyone
   who installs the Skill can read it.
@@ -46,7 +50,7 @@ If none fits, the Skill probably needs a team-owned backend; see "Team keys" bel
 
 ### 1. No sign-in
 
-Nothing in `cubbie.yaml` unless scripts call an API; then declare the host in `network.runtime`.
+Nothing extra. Scripts can reach any website over HTTPS.
 
 ### 2. Connected accounts
 
@@ -72,32 +76,33 @@ Say which schools or sites the Skill supports; campus systems differ.
 
 ### 4. CLI login
 
-```yaml
-login:
-  - id: netlify
-    command: netlify login --request "Cubbie wants to publish web pages for you" --json
-    status: python3 scripts/publish.py status
+```markdown
+## Sign in (first time only)
+
+1. Run `python3 scripts/publish.py status`. Exit code 0 means the student is signed in; skip the rest.
+2. Start the sign-in: `netlify login --request "Cubbie wants to publish web pages for you" --json`.
+   Send the student the `url` it prints and end your turn.
+3. When the student replies, run `netlify login --check <ticket_id> --json` and read `status`.
 ```
 
-- `command` prints the link (and code, if any). It may wait for approval (`gh auth login --web`) or exit and leave a
-  second step to finish it.
-- `status` exits with 0 when the student is signed in; a small wrapper script is fine.
-- For a two-step login, describe the second step (the "check" command) in `SKILL.md`.
+- The login command prints the link (and code, if any). It may wait for approval (`gh auth login --web`) or exit and
+  leave a second step to finish it; describe that step.
+- Give a status command that exits with 0 when the student is signed in; a small wrapper script is fine.
 - Login state is written under `HOME`, which persists per student.
 
 ### 5. Student API key
 
-```yaml
-secrets:
-  - env: OPENWEATHER_API_KEY
-    label: OpenWeather API key
-    help_url: https://home.openweathermap.org/api_keys
+```markdown
+## Key
+
+This Skill needs the student's own free OpenWeather API key, saved in Cubbie as `OPENWEATHER_API_KEY`
+(created at https://home.openweathermap.org/api_keys). Run the script as
+`OPENWEATHER_API_KEY="$OPENWEATHER_API_KEY" python3 scripts/forecast.py ...`.
 ```
 
-- The key arrives as an environment variable. Scripts read it with `os.environ["OPENWEATHER_API_KEY"]` (Python) or
-  `process.env.OPENWEATHER_API_KEY` (Node), and never print it.
-- `help_url` should open the exact page where the key is created. Say in `SKILL.md` how long it takes and whether
-  it is free.
-- `required: false` lets the Skill run without the key; say in `SKILL.md` what works without it.
+- Scripts read the key with `os.environ["OPENWEATHER_API_KEY"]` (Python) or `process.env.OPENWEATHER_API_KEY`
+  (Node), and never print it. Cubbie masks it in output too.
+- Link the exact page where the key is created, and say how long it takes and whether it is free.
+- If the Skill can run without the key, say what works without it.
 - When a script reports the key is missing or rejected, the Skill tells Cubbie to ask the student to update it
   through the secure page, never in the chat.

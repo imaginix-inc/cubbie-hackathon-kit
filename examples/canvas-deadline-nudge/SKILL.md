@@ -5,7 +5,7 @@ description: Sets reminders before upcoming Canvas assignment deadlines. Use whe
 
 # Canvas Deadline Nudge
 
-This Skill uses only Cubbie's built-in capabilities. It has no scripts and no `cubbie.yaml`.
+This Skill uses only Cubbie's built-in capabilities. It has no scripts.
 
 ## When to use
 

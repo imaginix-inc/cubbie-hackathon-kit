@@ -24,7 +24,7 @@ Plain words keep the Skill readable in Claude Code and Codex too.
 | Documents and slides | Creates Word, PDF, Excel, Markdown, calendar (.ics) and HTML files, and slide decks | "Make a one-page PDF study guide and send it" | Produce a one-page resume or a study guide PDF |
 | Files and media | Reads photos, PDFs and documents the student sends; transcribes voice notes and videos | "Read the receipt photo the student sent" | Turn a photo of a whiteboard into clean notes |
 | Memory | Remembers facts and preferences about the student across conversations | "Remember the student's dietary needs", "use the budget the student set before" | Remember dietary needs or a budget and use them next time |
-| Secure input | Sends a private page to collect a password, API key, phone or email; the value never enters the chat | Usually automatic for `secrets` in `cubbie.yaml`; otherwise "collect the student's library card number through a secure page" | Collect a key your Skill needs |
+| Secure input | Sends a private page to collect a password, API key, phone or email; the value never enters the chat | Automatic for a key `SKILL.md` names (see `cubbie-auth.md`); otherwise "collect the student's library card number through a secure page" | Collect a key your Skill needs |
 | Code sandbox | Runs Python and Node scripts in the student's private sandbox, with files that persist; a long command (a login, a build) can run in the background for up to an hour | "Run `python3 scripts/plan.py --course <id>`" | Run your Skill's own scripts and command-line tools |
 
 Cubbie also writes replies, follows up proactively within the student's notification settings, and asks before it
@@ -44,7 +44,7 @@ sends a message to someone else, submits work or changes an account.
 - **The student's yes is always required** for sending, booking, submitting or paying. A Skill cannot grant that
   approval. For payment, hand the browser to the student.
 - **Keep personal data with the student.** Let Cubbie remember preferences. Send data to your own server only when
-  the Skill says so plainly and the host is declared in `cubbie.yaml`.
+  the Skill says so plainly.
 - **Installs are per student.** A student who installs a Skill gets it only for themselves; keys, logins and saved
   state stay with that student.
 
@@ -66,19 +66,21 @@ say so in its description, so Cubbie can tell when to use it.
 
 | Supported | Not supported yet |
 | --- | --- |
-| Skills in the Agent Skills format, from public GitHub repositories | MCP servers, remote or local |
+| Skills in the Agent Skills format, from any https git repository (private ones once the student signs in to git on Cubbie) or a `.zip`/`.tar.gz` link | MCP servers, remote or local |
 | Python and Node scripts; pip and npm packages; prebuilt binaries by URL with a SHA-256 | System packages (`apt`), install scripts (`curl \| sh`), git or URL dependencies |
-| HTTPS to the hosts you declare and to PyPI and npm; other hosts once the student approves them | Plain HTTP, SSH, databases; reaching a server you start from outside the sandbox |
+| HTTPS (port 443) to any website | Plain HTTP, SSH, mail, other ports and databases; reaching a server you start from outside the sandbox |
 | Sign-in through Cubbie's browser, CLI login links and student API keys | "Sign in with ..." (OAuth) buttons for your own app; hosting your team's keys for all students |
 | Cubbie's abilities, called by Cubbie as your `SKILL.md` describes | Scripts calling Cubbie's abilities directly; Cubbie texting people other than its student |
 
-Packages: pin exact versions in `cubbie.yaml` (most reliable). A Skill without `cubbie.yaml` still installs: Cubbie
-reads the commands in `metadata.requires.bins` and the install commands in `SKILL.md` and the README, works out the
-PyPI or npm packages, pins their latest versions and shows them as "added by Cubbie" for the student to approve.
+Packages: write pinned install commands in a Setup section of `SKILL.md`. Cubbie shows them (and the commands listed
+in `metadata.requires.bins`) in the install summary and runs them after the student agrees; global npm packages and
+anything under HOME survive restarts.
 
-Limits per Skill: at most 10 MiB and 300 files (1 MiB each), up to 10 hosts and 5 keys; the repository archive Cubbie
-downloads must be at most 30 MiB. One link to a folder of Skills installs up to 40 of them together, sharing one set
-of packages. Cubbie also caps how many Skills a student can install (50 by default).
+Limits per Skill: at most 1,000 files and 50 MiB; `.git` and `node_modules` folders are not copied. A symbolic link to
+a file elsewhere in the repository is installed as a copy; other links, git submodules and Git LFS files are left out.
+One link installs up to 40 Skills together (what it fetches must stay under 200 MiB compressed), and each keeps its
+own Setup commands. There is no limit on how many Skills a student installs: Cubbie lists the most used in full and
+finds the rest by name and description.
 
 ## Scenario starting points
 

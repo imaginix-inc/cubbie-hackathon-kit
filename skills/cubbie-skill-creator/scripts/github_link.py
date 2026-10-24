@@ -3,15 +3,16 @@
 # requires-python = ">=3.9"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Print the GitHub link a student texts to Cubbie to install a Skill, pinned to the pushed commit.
+"""Print the link a student texts to Cubbie to install a Skill, pinned to the pushed commit.
 
-    python3 scripts/github_link.py <skill-folder>            # checks GitHub too
+    python3 scripts/github_link.py <skill-folder>            # asks the git host too
     python3 scripts/github_link.py <skill-folder> --offline  # local git checks only
 
 The folder (one Skill, or a folder of Skills that one link installs together) must be committed
-and pushed to a public GitHub repository. The script runs the Cubbie checks from
-validate_cubbie_skill.py, then downloads the commit's archive the way Cubbie does (no login, no
-redirects, at most 30 MiB). It never pushes or changes anything.
+and pushed. Cubbie fetches links with git over HTTPS from any host (as of 2026-10-24); GitHub, Gitee
+and GitLab links can name a folder and a branch, tag or commit, other hosts only the repository.
+The script runs the Cubbie checks from validate_cubbie_skill.py, then lists the repository with git
+without a sign-in, as anyone installing the link would. It never pushes or changes anything.
 """
 
 from __future__ import annotations
@@ -19,17 +20,17 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
-# The link forms Cubbie accepts: github.com/<owner>/<repo>[/tree/<ref>/<folder>].
+# Repository path segments Cubbie accepts in a link (app/skills/source.py).
 SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
-REMOTE = re.compile(r"^(?:https://(?:[^@/]+@)?(?:www\.)?github\.com/|git@github\.com:|ssh://git@github\.com/)"
-                    r"(?P<owner>[^/]+)/(?P<repo>[^/]+?)(?:\.git)?/?$")
+REMOTE = re.compile(r"^(?:(?:https|ssh)://(?:[^@/]+@)?(?P<host>[^/:]+)(?::\d+)?/|(?:[^@/]+@)?(?P<scp>[^/:]+):)"
+                    r"(?P<path>[^:]+?)(?:\.git)?/?$")
 
 
 def _load_validator():
@@ -47,30 +48,34 @@ def git(folder: Path, *args: str) -> str | None:
         return None
 
 
-MAX_ARCHIVE_BYTES = 30 * 1024 * 1024  # Cubbie refuses larger repository archives
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):  # Cubbie does not follow redirects either
-        return None
-
-
-def archive_status(owner: str, repo: str, commit: str) -> tuple[int | None, int | None]:
-    """(HTTP status, size in bytes or None when over the limit) of the archive Cubbie downloads from codeload."""
-    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{commit}"
-    request = urllib.request.Request(url, headers={"User-Agent": "cubbie-skill-creator"})
+def remote_access(url: str) -> str:
+    """List the repository with git and no sign-in, as Cubbie does: "public", "sign-in", "not-found" or "unreachable"."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="/bin/false")
     try:
-        with urllib.request.build_opener(_NoRedirect).open(request, timeout=30) as response:
-            size = 0
-            while chunk := response.read(1 << 16):
-                size += len(chunk)
-                if size > MAX_ARCHIVE_BYTES:
-                    return response.status, None
-            return response.status, size
-    except urllib.error.HTTPError as exc:
-        return exc.code, 0
-    except (urllib.error.URLError, OSError):
-        return None, 0
+        result = subprocess.run(["git", "-c", "credential.helper=", "ls-remote", "--heads", "--", url],
+                                capture_output=True, text=True, env=env, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return "unreachable"
+    if result.returncode == 0:
+        return "public"
+    if "could not read Username" in result.stderr or "Authentication failed" in result.stderr or "403" in result.stderr:
+        return "sign-in"
+    if "not found" in result.stderr.lower() or "does not exist" in result.stderr or "404" in result.stderr:
+        return "not-found"
+    return "unreachable"
+
+
+def web_link(host: str, project: str, ref: str | None, subpath: str) -> str | None:
+    """The link Cubbie reads as this ref and folder; None where the host's links name only the repository."""
+    base = f"https://{host}/{project}"
+    if not ref:
+        return base
+    tail = "".join(f"/{quote(segment)}" for segment in (*ref.split("/"), *(subpath.split("/") if subpath else ())))
+    if host in ("github.com", "gitee.com"):
+        return f"{base}/tree{tail}"
+    if "gitlab" in host:
+        return f"{base}/-/tree{tail}"
+    return None
 
 
 def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dict:
@@ -79,17 +84,20 @@ def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dic
     result = {"folder": str(folder), "ok": False, "problems": problems, "notes": notes}
     root = git(folder, "rev-parse", "--show-toplevel")
     if root is None:
-        problems.append("This folder is not in a git repository. Create a public GitHub repository, commit the Skill and push it.")
+        problems.append("This folder is not in a git repository. Create a public repository (on GitHub for the hackathon), "
+                        "commit the Skill and push it.")
         return result
     subpath = folder.relative_to(Path(root).resolve()).as_posix()
     subpath = "" if subpath == "." else subpath
     remote_url = git(folder, "remote", "get-url", remote)
     match = REMOTE.match(remote_url or "")
-    if not match:
-        problems.append(f"The git remote {remote!r} is {remote_url or 'missing'}; Cubbie installs only from github.com.")
+    host = (match["host"] or match["scp"]).lower().removeprefix("www.") if match else ""
+    if "." not in host:
+        problems.append(f"The git remote {remote!r} is {remote_url or 'missing'}; Cubbie fetches from https://<host>/<repository>, "
+                        "so push to a remote with a web address.")
         return result
-    owner, repo = match["owner"], match["repo"]
-    for segment in (owner, repo, *(subpath.split("/") if subpath else ())):
+    project = match["path"].strip("/")
+    for segment in project.split("/"):
         if not SEGMENT.match(segment):
             problems.append(f"{segment!r} cannot appear in a Cubbie install link; use letters, digits, '.', '_' and '-' only.")
     commit = git(folder, "rev-parse", "HEAD")
@@ -103,40 +111,32 @@ def link_for(folder: Path, remote: str = "origin", offline: bool = False) -> dic
         problems.append(f"Commit {commit[:12]} is not on any branch of the remote yet; push it first.")
 
     validator = _load_validator()
-    at_root = not subpath and (folder / "SKILL.md").exists()
-    if (folder / "SKILL.md").exists():
-        # For a Skill at the repository root, Cubbie compares the name with the repository name, not the local folder.
-        results = [validator.check(folder, directory_name=repo if at_root else None)]
-    else:
-        results = validator.check_all(folder)  # a folder of Skills: one link installs them together
-    for checked in results:
+    for checked in validator.check_all(folder):  # a folder of Skills: one link installs them together
         if not checked["ok"]:
-            hint = " (the Skill is the repository root, so the repository name counts as its folder name)" \
-                if at_root and "must equal the folder name" in checked["error"] else ""
-            problems.append(f"Cubbie would refuse this: {checked['error']}{hint}")
+            problems.append(f"Cubbie would refuse this: {checked['error']}")
         notes.extend(note for note in checked.get("warnings", []) if not note.startswith("There are uncommitted changes"))
-    result["skills"] = [checked["name"] for checked in results if checked.get("name")]
+        if checked.get("name"):
+            result.setdefault("skills", []).append(checked["name"])
 
+    url = f"https://{host}/{project}"
     if not offline and not problems:
-        status, size = archive_status(owner, repo, commit)
-        if status == 404:
-            problems.append(f"GitHub does not serve commit {commit[:12]} of {owner}/{repo} without a login. "
-                            "Make the repository public; if it is, push the commit.")
-        elif status == 200 and size is None:
-            problems.append("The repository archive is over 30 MiB, so Cubbie would refuse it; "
-                            "put the Skill in a smaller repository.")
-        elif status is not None and 300 <= status < 400:
-            problems.append(f"GitHub redirects the archive (HTTP {status}), which Cubbie does not follow; "
-                            "check that the repository was not renamed or moved and use its current name.")
-        elif status != 200:
-            notes.append("Could not reach GitHub to confirm the commit is public; open the link in a private browser window to check.")
+        access = remote_access(url)
+        if access == "sign-in":
+            notes.append(f"{url} needs a sign-in, so its link installs only for a student who signed in to git on Cubbie's "
+                         "computer (Cubbie can run gh auth login for them). Make the repository public so anyone can install it.")
+        elif access == "not-found":
+            problems.append(f"{url} was not found without a sign-in. Check the remote; if the repository is private, make it public.")
+        elif access == "unreachable":
+            notes.append(f"Could not reach {host} to check the repository; open {url} in a private browser window to check.")
 
-    tail = f"/{subpath}" if subpath else ""
-    result.update(owner=owner, repo=repo, commit=commit, subpath=subpath,
-                  pinned=f"https://github.com/{owner}/{repo}/tree/{commit}{tail}")
     branch = git(folder, "rev-parse", "--abbrev-ref", "HEAD")
-    if branch and branch != "HEAD" and "/" not in branch:
-        result["latest"] = f"https://github.com/{owner}/{repo}/tree/{branch}{tail}"
+    pinned = web_link(host, project, commit, subpath)
+    result.update(host=host, repository=url, commit=commit, subpath=subpath, pinned=pinned or url)
+    if branch and branch != "HEAD" and pinned:
+        result["latest"] = web_link(host, project, branch, subpath)
+    if not pinned:
+        notes.append(f"Links to {host} can name only the repository: Cubbie installs every Skill in it (up to 40) from the "
+                     "newest commit of its default branch. Use GitHub, Gitee or GitLab to link one folder or pin a commit.")
     result["ok"] = not problems
     return result
 
@@ -146,7 +146,11 @@ def render(result: dict) -> str:
     if result["ok"]:
         if len(result.get("skills") or []) > 1:
             lines.append(f"One link installs {len(result['skills'])} Skills together: {', '.join(result['skills'])}")
-        lines += ["Pinned link (always this commit; share it and use it for submission once it works):", f"  {result['pinned']}"]
+        if result["pinned"] == result["repository"]:
+            lines += ["Repository link (installs the newest commit of the default branch):", f"  {result['pinned']}"]
+        else:
+            lines += ["Pinned link (always this commit; share it and use it for submission once it works):",
+                      f"  {result['pinned']}"]
         if result.get("latest"):
             lines += ["Branch link (the newest push; test with it, and text it again after each push to update):",
                       f"  {result['latest']}"]
@@ -160,9 +164,9 @@ def render(result: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Print the Cubbie install link for a pushed Skill folder.")
     parser.add_argument("folder", type=Path,
-                        help="the Skill folder (its name must equal the Skill name), or a folder of Skills")
-    parser.add_argument("--remote", default="origin", help="git remote that points at GitHub (default: origin)")
-    parser.add_argument("--offline", action="store_true", help="skip the GitHub checks")
+                        help="the Skill folder, or a folder of Skills")
+    parser.add_argument("--remote", default="origin", help="git remote Cubbie fetches from (default: origin)")
+    parser.add_argument("--offline", action="store_true", help="skip asking the git host")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
     args = parser.parse_args(argv)
     result = link_for(args.folder, remote=args.remote, offline=args.offline)
